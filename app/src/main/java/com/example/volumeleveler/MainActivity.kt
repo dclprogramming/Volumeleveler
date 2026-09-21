@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.KeyEvent
 import android.widget.FrameLayout
 
 class MainActivity : Activity() {
@@ -69,5 +70,24 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, LevelerService::class.java))
         State.running = true
         State.status = "Starting…"
+    }
+
+    // ---- Remote Control Long-Press Handling ----
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            event?.startTracking()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            // Trigger your desired action on long press (e.g., toggle service)
+            toggle()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
     }
 }
