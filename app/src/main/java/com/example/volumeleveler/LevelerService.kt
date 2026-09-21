@@ -195,7 +195,7 @@ class LevelerService : Service() {
                     err > tol -> { step(-1, stepCount); lastAdjust = now }
                     // Only raise if there is plausibly content playing; a very quiet
                     // room (paused video) must not ramp volume up to the max.
-                    err < -tol && avg > target - 20f -> { step(+1, stepCount); lastAdjust = now }
+                    err < -tol && avg > target - 10f -> { step(+1, stepCount); lastAdjust = now }
                 }
             }
         } catch (e: SecurityException) {
@@ -255,6 +255,6 @@ class LevelerService : Service() {
 
     companion object {
         private const val CHANNEL = "leveler"
-        private const val STEP_LEVELS = 6
+        private const val STEP_LEVELS = 3
     }
 }
