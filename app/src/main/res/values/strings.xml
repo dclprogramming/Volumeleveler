@@ -1,0 +1,4 @@
+<resources>
+    <string name="a11y_desc">Lets Volume Leveler open its settings panel when you long-press the OK button on the remote.</string>
+    <string name="a11y_label">Volume Leveler (long-press OK)</string>
+</resources>

@@ -6,4 +6,6 @@ object State {
     @Volatile var status = "Stopped"
     @Volatile var micName = "-"
     @Volatile var levelDb = Float.NaN
+    /** Bumped when the mic choice changes so the capture loop restarts. */
+    @Volatile var micRev = 0
 }
