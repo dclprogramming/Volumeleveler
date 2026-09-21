@@ -28,6 +28,9 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
 
+    /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
+    private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -52,18 +55,18 @@ class MainActivity : Activity() {
         }
         root.addView(micBtn)
 
-        root.addView(adjRow({ "Target level: ${Prefs.target(this).roundToInt()} dB" }) { d ->
+        root.addView(adjRow({ "Loudness target: ${pct(Prefs.target(this))}%" }) { d ->
             Prefs.setTarget(this, Prefs.target(this) + d)
         })
         root.addView(Button(this).apply {
-            text = "Set target = current room level"
+            text = "Set target = current room loudness"
             isAllCaps = false
             setOnClickListener {
                 if (!State.levelDb.isNaN()) Prefs.setTarget(this@MainActivity, State.levelDb)
                 refresh()
             }
         })
-        root.addView(adjRow({ "Tolerance: ±${Prefs.tolerance(this).roundToInt()} dB" }) { d ->
+        root.addView(adjRow({ "Tolerance: ±${Prefs.tolerance(this).roundToInt()}%" }) { d ->
             Prefs.setTolerance(this, Prefs.tolerance(this) + d)
         })
         root.addView(adjRow({ "Min volume: ${Prefs.minPct(this)}%" }) { d ->
@@ -74,9 +77,10 @@ class MainActivity : Activity() {
         })
 
         root.addView(text(
-            "Tip: set the volume you like while normal content plays, then press " +
-                "\"Set target = current room level\". The app then lowers volume when the room " +
-                "gets louder than target and raises it (up to Max) when quieter.", 14f
+            "Loudness is what the mic hears in the room (0-100), not your TV volume. " +
+                "Play something at a comfortable volume, then press \"Set target = current " +
+                "room loudness\". The app lowers volume when the room gets louder than the " +
+                "target and raises it back (never above your starting volume) when quieter.", 14f
         ).apply { setPadding(0, dp(16), 0, 0); setTextColor(Color.LTGRAY) })
 
         setContentView(ScrollView(this).apply {
@@ -128,9 +132,9 @@ class MainActivity : Activity() {
         val am = getSystemService(AudioManager::class.java)
         val vol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val level = if (State.levelDb.isNaN()) "-" else "${State.levelDb.roundToInt()} dB"
+        val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
         statusView.text = "Status: ${State.status}\nMic in use: ${State.micName}\n" +
-            "Room level: $level    Volume: $vol / $maxVol"
+            "Room loudness: $level    Volume: $vol / $maxVol"
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
 
         val saved = Prefs.mic(this)
