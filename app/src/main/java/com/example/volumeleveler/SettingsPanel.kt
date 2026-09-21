@@ -36,6 +36,17 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         setTextColor(Color.WHITE)
     }
 
+    private fun styleButton(b: Button): Button = b.apply {
+        isAllCaps = false
+        setOnFocusChangeListener { v, hasFocus ->
+            if (hasFocus) {
+                v.setBackgroundColor(Color.parseColor("#333333")) // Dark gray focus color
+            } else {
+                v.setBackgroundColor(Color.TRANSPARENT)
+            }
+        }
+    }
+
     init {
         setBackgroundColor(Color.parseColor("#F2101418"))
         isFillViewport = true
@@ -49,11 +60,12 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         statusView = tv("", 16f).apply { setPadding(0, dp(8), 0, dp(12)) }
         root.addView(statusView)
 
-        toggleBtn = Button(context).apply { setOnClickListener { onToggle() } }
+        toggleBtn = styleButton(Button(context)).apply { 
+            setOnClickListener { onToggle() } 
+        }
         root.addView(toggleBtn)
 
-        micBtn = Button(context).apply {
-            isAllCaps = false
+        micBtn = styleButton(Button(context)).apply {
             setOnClickListener { cycleMic() }
         }
         root.addView(micBtn)
@@ -61,24 +73,28 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         root.addView(adjRow({ "Target: ${Prefs.target(context).roundToInt()} dB" }) { d ->
             Prefs.setTarget(context, Prefs.target(context) + d)
         })
-        root.addView(Button(context).apply {
+        
+        root.addView(styleButton(Button(context)).apply {
             text = "Set target = current room level"
-            isAllCaps = false
             setOnClickListener {
                 if (!State.levelDb.isNaN()) Prefs.setTarget(context, State.levelDb)
                 refresh()
             }
         })
+        
         root.addView(adjRow({ "Tolerance: ±${Prefs.tolerance(context).roundToInt()} dB" }) { d ->
             Prefs.setTolerance(context, Prefs.tolerance(context) + d)
         })
+        
         root.addView(adjRow({ "Min volume: ${Prefs.minPct(context)}%" }) { d ->
             Prefs.setMinPct(context, Prefs.minPct(context) + d * 5)
         })
+        
         root.addView(adjRow({ "Max volume: ${Prefs.maxPct(context)}%" }) { d ->
             Prefs.setMaxPct(context, Prefs.maxPct(context) + d * 5)
         })
-        root.addView(Button(context).apply {
+        
+        root.addView(styleButton(Button(context)).apply {
             text = "Close"
             setOnClickListener { onClose?.invoke() }
         })
@@ -117,8 +133,8 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         val t = tv("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val minus = Button(context).apply { text = "−"; setOnClickListener { onChange(-1); refresh() } }
-        val plus = Button(context).apply { text = "+"; setOnClickListener { onChange(1); refresh() } }
+        val minus = styleButton(Button(context)).apply { text = "−"; setOnClickListener { onChange(-1); refresh() } }
+        val plus = styleButton(Button(context)).apply { text = "+"; setOnClickListener { onChange(1); refresh() } }
         row.addView(t); row.addView(minus); row.addView(plus)
         updaters.add { t.text = label() }
         return row
