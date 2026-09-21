@@ -75,12 +75,16 @@ class MainActivity : Activity() {
         root.addView(adjRow({ "Max volume: ${Prefs.maxPct(this)}%" }) { d ->
             Prefs.setMaxPct(this, Prefs.maxPct(this) + d * 5)
         })
+        root.addView(adjRow({ "Boost quiet scenes: up to +${Prefs.boost(this)} levels" }) { d ->
+            Prefs.setBoost(this, Prefs.boost(this) + d)
+        })
 
         root.addView(text(
             "Loudness is what the mic hears in the room (0-100), not your TV volume. " +
                 "Play something at a comfortable volume, then press \"Set target = current " +
-                "room loudness\". The app lowers volume when the room gets louder than the " +
-                "target and raises it back (never above your starting volume) when quieter.", 14f
+                "room loudness\". The app lowers volume right away when the room gets louder " +
+                "than the target, and raises it when quieter, up to the boost above the " +
+                "volume you set with the remote (and never above Max volume).", 14f
         ).apply { setPadding(0, dp(16), 0, 0); setTextColor(Color.LTGRAY) })
 
         setContentView(ScrollView(this).apply {

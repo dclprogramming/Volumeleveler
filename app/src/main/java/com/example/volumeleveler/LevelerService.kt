@@ -37,6 +37,7 @@ class LevelerService : Service() {
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
+    private var lastSync = 0L
 
     private val deviceCb = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = onDevicesChanged()
@@ -151,7 +152,7 @@ class LevelerService : Service() {
             State.micName = dev?.let { MicSelector.label(it) } ?: "System default"
             State.status = "Listening"
 
-            val buf = ShortArray(rate / 10) // 100 ms chunks
+            val buf = ShortArray(rate / 20) // 50 ms chunks
             var avg = Float.NaN
             var lastAdjust = 0L
             var silentSince = 0L
@@ -170,8 +171,8 @@ class LevelerService : Service() {
                     sum += s * s
                 }
                 val db = (20.0 * log10(max(sqrt(sum / n), 1e-7))).toFloat()
-                // Smooth over roughly 2 s so short bursts don't cause jumps.
-                avg = if (avg.isNaN()) db else avg + 0.05f * (db - avg)
+                // Fast attack (loud sounds register within ~100 ms), slow release (~1.5 s).
+                avg = if (avg.isNaN()) db else avg + (if (db > avg) ATTACK else RELEASE) * (db - avg)
                 State.levelDb = avg
 
                 val now = SystemClock.elapsedRealtime()
@@ -187,15 +188,27 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                if (now - lastAdjust < 2500) continue
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
+                val loudBy = avg - (target + tol)
                 when {
-                    // Loud: drop several levels at once. Quiet: come back up gently.
-                    avg > target + tol -> { step(-1, LOWER_LEVELS); lastAdjust = now }
-                    // Only raise if there is plausibly content playing; a very quiet
-                    // room (paused video) must not ramp volume up.
-                    avg < target - tol && avg > target - 20f -> { step(+1, RAISE_LEVELS); lastAdjust = now }
+                    // Loud: react right away, sized to how far over we are (at least 3 levels).
+                    loudBy > 0 && now - lastAdjust >= LOWER_COOLDOWN -> {
+                        val levels = ceil(loudBy / DB_PER_LEVEL).toInt()
+                            .coerceIn(LOWER_MIN_LEVELS, LOWER_MAX_LEVELS)
+                        val moved = step(-1, levels)
+                        // The mic can't hear the change yet, so assume it will and
+                        // don't keep lowering for the same loud moment.
+                        avg -= moved * DB_PER_LEVEL
+                        lastAdjust = now
+                    }
+                    // Quiet: come back up gently. Only if there is plausibly content
+                    // playing; a very quiet room (paused video) must not ramp volume up.
+                    avg < target - tol && avg > target - 20f && now - lastAdjust >= RAISE_COOLDOWN -> {
+                        val moved = step(+1, RAISE_LEVELS)
+                        avg += moved * DB_PER_LEVEL
+                        lastAdjust = now
+                    }
                 }
             }
         } catch (e: SecurityException) {
@@ -208,19 +221,19 @@ class LevelerService : Service() {
         }
     }
 
-    private fun step(dir: Int, count: Int) {
+    private fun step(dir: Int, count: Int): Int {
         if (am.isVolumeFixed) {
             State.status = "Volume is fixed on this output (cannot adjust)"
-            return
+            return 0
         }
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val lo = ceil(maxVol * Prefs.minPct(this) / 100.0).toInt()
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val hi = minOf(floor(maxVol * Prefs.maxPct(this) / 100.0).toInt(), baseVol)
+        val hi = minOf(floor(maxVol * Prefs.maxPct(this) / 100.0).toInt(), baseVol + Prefs.boost(this))
 
         // Never move against the requested direction, and never past the limits.
         val moves = if (dir > 0) minOf(cur + count, hi) - cur else cur - maxOf(cur - count, lo)
-        if (moves <= 0) return
+        if (moves <= 0) return 0
 
         // adjustStreamVolume follows the same path as remote volume keys,
         // which is what HDMI-CEC / ARC output usually needs.
@@ -233,6 +246,7 @@ class LevelerService : Service() {
         }
         adjusted = true
         settleUntil = SystemClock.elapsedRealtime() + 1500
+        return moves
     }
 
     /**
@@ -240,7 +254,8 @@ class LevelerService : Service() {
      * level the ceiling, whether the user turned it up or down.
      */
     private fun syncVolume(now: Long) {
-        if (now < settleUntil) return
+        if (now < settleUntil || now - lastSync < 250) return
+        lastSync = now
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (adjusted) {
             adjusted = false // just learn where our own change landed
@@ -276,7 +291,13 @@ class LevelerService : Service() {
 
     companion object {
         private const val CHANNEL = "leveler"
-        private const val LOWER_LEVELS = 3
+        private const val LOWER_MIN_LEVELS = 3
+        private const val LOWER_MAX_LEVELS = 8
         private const val RAISE_LEVELS = 1
+        private const val DB_PER_LEVEL = 1.1f   // roughly what one volume level changes, in dB
+        private const val ATTACK = 0.5f         // per 50 ms chunk
+        private const val RELEASE = 0.03f
+        private const val LOWER_COOLDOWN = 600L
+        private const val RAISE_COOLDOWN = 2500L
     }
 }

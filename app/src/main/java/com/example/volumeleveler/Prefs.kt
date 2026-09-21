@@ -22,4 +22,8 @@ object Prefs {
 
     fun maxPct(c: Context): Int = sp(c).getInt("maxPct", 60)
     fun setMaxPct(c: Context, v: Int) = sp(c).edit().putInt("maxPct", v.coerceIn(5, 100)).apply()
+
+    /** How many volume levels above your own volume quiet scenes may be boosted. */
+    fun boost(c: Context): Int = sp(c).getInt("boost", 5)
+    fun setBoost(c: Context, v: Int) = sp(c).edit().putInt("boost", v.coerceIn(0, 30)).apply()
 }
