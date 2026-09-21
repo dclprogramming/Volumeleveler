@@ -186,7 +186,7 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                if (now - lastAdjust < 750) continue
+                if (now - lastAdjust < 1500) continue
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val err = avg - target
