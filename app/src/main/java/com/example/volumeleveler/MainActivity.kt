@@ -86,19 +86,20 @@ class MainActivity : Activity() {
                         isLongPress = false
                         longPressHandler.postDelayed({
                             isLongPress = true
-                            // Trigger toggle (or bring up/modify options) on long press hold (~800ms)
                             toggle()
                         }, 800)
                     }
-                    return true
+                    // MUST pass ACTION_DOWN through so focused views receive press state and clicks work!
+                    return super.dispatchKeyEvent(event)
                 }
                 KeyEvent.ACTION_UP -> {
                     longPressHandler.removeCallbacksAndMessages(null)
-                    if (!isLongPress) {
-                        // Short click passes through normally to focused UI elements
-                        return super.dispatchKeyEvent(event)
+                    if (isLongPress) {
+                        // Long-press was executed, consume the UP event so normal click doesn't double-trigger
+                        return true
                     }
-                    return true
+                    // Normal short click, pass through
+                    return super.dispatchKeyEvent(event)
                 }
             }
         }
