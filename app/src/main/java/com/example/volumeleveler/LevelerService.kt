@@ -157,21 +157,21 @@ class LevelerService : Service() {
                     main.post { startCapture() }
                     return
                 }
-                val readBytes = rec.read(buf, 0, buf.size)
-                if (readBytes < 0) {
-                    State.status = "Mic read error ($readBytes)"
+                val n = rec.read(buf, 0, buf.size)
+                if (n < 0) {
+                    State.status = "Mic read error ($n)"
                     break
                 }
-                if (readBytes == 0) continue
+                if (n == 0) continue
 
                 var sum = 0.0
-                for (i in 0 until readBytes) {
+                for (i in 0 until n) {
                     val s = buf[i] / 32768.0
                     sum += s * s
                 }
-                val db = (20.0 * log10(max(sqrt(sum / readBytes), 1e-7))).toFloat()
+                val db = (20.0 * log10(max(sqrt(sum / n), 1e-7))).toFloat()
                 // Smooth over roughly 1 s so short bursts don't cause jumps.
-                avg = if (avg.isNaN()) db else avg + 0.3f * (db - avg)
+                avg = if (avg.isNaN()) db else avg + 0.1f * (db - avg)
                 State.levelDb = avg
 
                 val now = SystemClock.elapsedRealtime()
@@ -186,16 +186,16 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                if (now - lastAdjust < 750) continue
+                if (now - lastAdjust < 1500) continue
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val err = avg - target
-                val stepCount = STEP_LEVELS // volume levels moved per adjustment
+                val n = STEP_LEVELS // volume levels moved per adjustment
                 when {
-                    err > tol -> { step(-1, stepCount); lastAdjust = now }
+                    err > tol -> { step(-1, n); lastAdjust = now }
                     // Only raise if there is plausibly content playing; a very quiet
                     // room (paused video) must not ramp volume up to the max.
-                    err < -tol && avg > target - 10f -> { step(+1, stepCount); lastAdjust = now }
+                    err < -tol && avg > target - 20f -> { step(+1, n); lastAdjust = now }
                 }
             }
         } catch (e: SecurityException) {

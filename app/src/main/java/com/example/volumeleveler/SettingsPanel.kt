@@ -1,7 +1,6 @@
 package com.example.volumeleveler
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.media.AudioManager
 import android.view.Gravity
@@ -37,21 +36,6 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         setTextColor(Color.WHITE)
     }
 
-    private fun styleButton(b: Button): Button = b.apply {
-        isAllCaps = false
-        val states = arrayOf(
-            intArrayOf(android.R.attr.state_focused),
-            intArrayOf(android.R.attr.state_pressed),
-            intArrayOf()
-        )
-        val colors = intArrayOf(
-            Color.parseColor("#444444"), // Focused / Hovered (Dark Gray)
-            Color.parseColor("#444444"), // Pressed (Dark Gray)
-            Color.TRANSPARENT            // Default
-        )
-        backgroundTintList = ColorStateList(states, colors)
-    }
-
     init {
         setBackgroundColor(Color.parseColor("#F2101418"))
         isFillViewport = true
@@ -65,12 +49,11 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         statusView = tv("", 16f).apply { setPadding(0, dp(8), 0, dp(12)) }
         root.addView(statusView)
 
-        toggleBtn = styleButton(Button(context)).apply { 
-            setOnClickListener { onToggle() } 
-        }
+        toggleBtn = Button(context).apply { setOnClickListener { onToggle() } }
         root.addView(toggleBtn)
 
-        micBtn = styleButton(Button(context)).apply {
+        micBtn = Button(context).apply {
+            isAllCaps = false
             setOnClickListener { cycleMic() }
         }
         root.addView(micBtn)
@@ -78,28 +61,24 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         root.addView(adjRow({ "Target: ${Prefs.target(context).roundToInt()} dB" }) { d ->
             Prefs.setTarget(context, Prefs.target(context) + d)
         })
-        
-        root.addView(styleButton(Button(context)).apply {
+        root.addView(Button(context).apply {
             text = "Set target = current room level"
+            isAllCaps = false
             setOnClickListener {
                 if (!State.levelDb.isNaN()) Prefs.setTarget(context, State.levelDb)
                 refresh()
             }
         })
-        
         root.addView(adjRow({ "Tolerance: ±${Prefs.tolerance(context).roundToInt()} dB" }) { d ->
             Prefs.setTolerance(context, Prefs.tolerance(context) + d)
         })
-        
         root.addView(adjRow({ "Min volume: ${Prefs.minPct(context)}%" }) { d ->
             Prefs.setMinPct(context, Prefs.minPct(context) + d * 5)
         })
-        
         root.addView(adjRow({ "Max volume: ${Prefs.maxPct(context)}%" }) { d ->
             Prefs.setMaxPct(context, Prefs.maxPct(context) + d * 5)
         })
-        
-        root.addView(styleButton(Button(context)).apply {
+        root.addView(Button(context).apply {
             text = "Close"
             setOnClickListener { onClose?.invoke() }
         })
@@ -138,14 +117,8 @@ class SettingsPanel(ctx: Context, private val onToggle: () -> Unit) : ScrollView
         val t = tv("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val minus = styleButton(Button(context)).apply { 
-            text = "−" 
-            setOnClickListener { onChange(-1); refresh() } 
-        }
-        val plus = styleButton(Button(context)).apply { 
-            text = "+" 
-            setOnClickListener { onChange(1); refresh() } 
-        }
+        val minus = Button(context).apply { text = "−"; setOnClickListener { onChange(-1); refresh() } }
+        val plus = Button(context).apply { text = "+"; setOnClickListener { onChange(1); refresh() } }
         row.addView(t); row.addView(minus); row.addView(plus)
         updaters.add { t.text = label() }
         return row

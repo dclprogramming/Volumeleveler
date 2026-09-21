@@ -6,17 +6,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.Gravity
-import android.view.KeyEvent
 import android.widget.FrameLayout
 
 class MainActivity : Activity() {
 
     private var pendingStart = false
-    private val longPressHandler = Handler(Looper.getMainLooper())
-    private var isLongPress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,35 +69,5 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, LevelerService::class.java))
         State.running = true
         State.status = "Starting…"
-    }
-
-    // ---- Reliable Remote Control Long-Press Handling ----
-
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER) {
-            when (event.action) {
-                KeyEvent.ACTION_DOWN -> {
-                    if (event.repeatCount == 0) {
-                        isLongPress = false
-                        longPressHandler.postDelayed({
-                            isLongPress = true
-                            toggle()
-                        }, 800)
-                    }
-                    // MUST pass ACTION_DOWN through so focused views receive press state and clicks work!
-                    return super.dispatchKeyEvent(event)
-                }
-                KeyEvent.ACTION_UP -> {
-                    longPressHandler.removeCallbacksAndMessages(null)
-                    if (isLongPress) {
-                        // Long-press was executed, consume the UP event so normal click doesn't double-trigger
-                        return true
-                    }
-                    // Normal short click, pass through
-                    return super.dispatchKeyEvent(event)
-                }
-            }
-        }
-        return super.dispatchKeyEvent(event)
     }
 }
