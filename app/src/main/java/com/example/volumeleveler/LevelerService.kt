@@ -171,7 +171,7 @@ class LevelerService : Service() {
                 }
                 val db = (20.0 * log10(max(sqrt(sum / n), 1e-7))).toFloat()
                 // Smooth over roughly 1 s so short bursts don't cause jumps.
-                avg = if (avg.isNaN()) db else avg + 0.1f * (db - avg)
+                avg = if (avg.isNaN()) db else avg + 0.3f * (db - avg)
                 State.levelDb = avg
 
                 val now = SystemClock.elapsedRealtime()
@@ -186,16 +186,16 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                if (now - lastAdjust < 1500) continue
+                if (now - lastAdjust < 750) continue
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val err = avg - target
-                val nn = STEP_LEVELS // volume levels moved per adjustment
+                val n = STEP_LEVELS // volume levels moved per adjustment
                 when {
-                    err > tol -> { step(-1,nn); lastAdjust = now }
+                    err > tol -> { step(-1,n); lastAdjust = now }
                     // Only raise if there is plausibly content playing; a very quiet
                     // room (paused video) must not ramp volume up to the max.
-                    err < -tol && avg > target - 20f -> { step(+1, nn); lastAdjust = now }
+                    err < -tol && avg > target - 20f -> { step(+1, n); lastAdjust = now }
                 }
             }
         } catch (e: SecurityException) {
@@ -255,6 +255,6 @@ class LevelerService : Service() {
 
     companion object {
         private const val CHANNEL = "leveler"
-        private const val STEP_LEVELS = 3
+        private const val STEP_LEVELS = 6
     }
 }

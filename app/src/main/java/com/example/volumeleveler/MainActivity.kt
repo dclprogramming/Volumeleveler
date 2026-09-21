@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.widget.FrameLayout
@@ -13,6 +15,8 @@ import android.widget.FrameLayout
 class MainActivity : Activity() {
 
     private var pendingStart = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private var isLongPress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,22 +76,32 @@ class MainActivity : Activity() {
         State.status = "Starting…"
     }
 
-    // ---- Remote Control Long-Press Handling ----
+    // ---- Reliable Remote Control Long-Press Handling ----
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-            event?.startTracking()
-            return true
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        isLongPress = false
+                        longPressHandler.postDelayed({
+                            isLongPress = true
+                            // Trigger toggle (or bring up/modify options) on long press hold (~800ms)
+                            toggle()
+                        }, 800)
+                    }
+                    return true
+                }
+                KeyEvent.ACTION_UP -> {
+                    longPressHandler.removeCallbacksAndMessages(null)
+                    if (!isLongPress) {
+                        // Short click passes through normally to focused UI elements
+                        return super.dispatchKeyEvent(event)
+                    }
+                    return true
+                }
+            }
         }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-            // Trigger your desired action on long press (e.g., toggle service)
-            toggle()
-            return true
-        }
-        return super.onKeyLongPress(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
 }
