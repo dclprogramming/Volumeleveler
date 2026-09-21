@@ -186,16 +186,16 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                if (now - lastAdjust < 1500) continue
+                if (now - lastAdjust < 750) continue
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val err = avg - target
-                val n = STEP_LEVELS // volume levels moved per adjustment
+                val vl = STEP_LEVELS // volume levels moved per adjustment
                 when {
-                    err > tol -> { step(-1, n); lastAdjust = now }
+                    err > tol -> { step(-1, vl); lastAdjust = now }
                     // Only raise if there is plausibly content playing; a very quiet
                     // room (paused video) must not ramp volume up to the max.
-                    err < -tol && avg > target - 20f -> { step(+1, n); lastAdjust = now }
+                    err < -tol && avg > target - 20f -> { step(+1, vl); lastAdjust = now }
                 }
             }
         } catch (e: SecurityException) {
