@@ -7,7 +7,7 @@ the TV's master volume to keep the room level near a target.
 1. Create a new GitHub repo and upload/push all of these files (branch `main`).
 2. The "Build APK" workflow runs automatically (Actions tab) and publishes a Release.
 3. In the Downloader app on the TV, enter:
-   https://github.com/<user>/<repo>/releases/latest/download/app-debug.apk
+   https://github.com/<user><repo>releases/latest/download/app-debug.apk
 4. Allow "Install unknown apps" for Downloader when prompted, then install.
 
 ## Or build locally
