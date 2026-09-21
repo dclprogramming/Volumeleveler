@@ -32,6 +32,11 @@ class LevelerService : Service() {
     private var worker: Thread? = null
     private var registered = false
     private var lastSig = ""
+    // Volume ceiling: starts at the volume when leveling began, then follows any manual change.
+    @Volatile private var baseVol = -1
+    private var knownVol = -1        // volume as of our last look
+    private var adjusted = false     // we just changed it ourselves
+    private var settleUntil = 0L     // wait for our own change to show up before judging
 
     private val deviceCb = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = onDevicesChanged()
@@ -51,6 +56,8 @@ class LevelerService : Service() {
             lastSig = signature()
             am.registerAudioDeviceCallback(deviceCb, Handler(Looper.getMainLooper()))
             registered = true
+            baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            knownVol = baseVol
         }
         State.running = true
         startCapture() // also used as "reload settings" when the UI pings the service
@@ -168,6 +175,7 @@ class LevelerService : Service() {
                 State.levelDb = avg
 
                 val now = SystemClock.elapsedRealtime()
+                syncVolume(now)
                 val silent = db < -85f
                 if (silent) {
                     if (silentSince == 0L) silentSince = now
@@ -183,10 +191,11 @@ class LevelerService : Service() {
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 when {
-                    avg > target + tol -> { step(-1); lastAdjust = now }
+                    // Loud: drop several levels at once. Quiet: come back up gently.
+                    avg > target + tol -> { step(-1, LOWER_LEVELS); lastAdjust = now }
                     // Only raise if there is plausibly content playing; a very quiet
-                    // room (paused video) must not ramp volume up to the max.
-                    avg < target - tol && avg > target - 20f -> { step(+1); lastAdjust = now }
+                    // room (paused video) must not ramp volume up.
+                    avg < target - tol && avg > target - 20f -> { step(+1, RAISE_LEVELS); lastAdjust = now }
                 }
             }
         } catch (e: SecurityException) {
@@ -199,25 +208,46 @@ class LevelerService : Service() {
         }
     }
 
-    private fun step(dir: Int) {
+    private fun step(dir: Int, count: Int) {
         if (am.isVolumeFixed) {
             State.status = "Volume is fixed on this output (cannot adjust)"
             return
         }
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val lo = ceil(maxVol * Prefs.minPct(this) / 100.0).toInt()
-        val hi = floor(maxVol * Prefs.maxPct(this) / 100.0).toInt().coerceAtLeast(lo)
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val next = (cur + dir).coerceIn(lo, hi)
-        if (next != cur) {
-            // adjustStreamVolume follows the same path as remote volume keys,
-            // which is what HDMI-CEC / ARC output usually needs.
+        val hi = minOf(floor(maxVol * Prefs.maxPct(this) / 100.0).toInt(), baseVol)
+
+        // Never move against the requested direction, and never past the limits.
+        val moves = if (dir > 0) minOf(cur + count, hi) - cur else cur - maxOf(cur - count, lo)
+        if (moves <= 0) return
+
+        // adjustStreamVolume follows the same path as remote volume keys,
+        // which is what HDMI-CEC / ARC output usually needs.
+        repeat(moves) {
             am.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
                 if (dir > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
                 0
             )
         }
+        adjusted = true
+        settleUntil = SystemClock.elapsedRealtime() + 1500
+    }
+
+    /**
+     * Notices volume changes we didn't make (remote volume keys) and makes the new
+     * level the ceiling, whether the user turned it up or down.
+     */
+    private fun syncVolume(now: Long) {
+        if (now < settleUntil) return
+        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (adjusted) {
+            adjusted = false // just learn where our own change landed
+        } else if (cur != knownVol) {
+            baseVol = cur
+        }
+        knownVol = cur
     }
 
     // ---- Bluetooth mic routing (best effort) ----
@@ -246,5 +276,7 @@ class LevelerService : Service() {
 
     companion object {
         private const val CHANNEL = "leveler"
+        private const val LOWER_LEVELS = 3
+        private const val RAISE_LEVELS = 1
     }
 }
