@@ -224,10 +224,14 @@ class LevelerService : Service() {
                         slow -= moved * DB_PER_LEVEL
                         lastAdjust = now
                     }
-                    // Quiet: come back up gently. Only if there is plausibly content
-                    // playing; a very quiet room (paused video) must not ramp volume up.
-                    avg < target - tol && contentPresent && now - lastAdjust >= RAISE_COOLDOWN -> {
-                        // The quieter the scene, the more levels it gets back (1-3).
+                    // Quiet: come back up. Recovering toward your own volume (after the app's
+                    // own cut) always proceeds - we caused the drop, so content is present.
+                    // Going ABOVE your volume (the boost) still needs contentPresent, so a
+                    // silent room never gets boosted.
+                    avg < target - tol && now - lastAdjust >= RAISE_COOLDOWN &&
+                        (am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol || contentPresent) -> {
+                        // The quieter the scene, the more levels it gets back (1-3), and
+                        // recovery moves faster than boosting above your own volume.
                         val quietBy = (target - tol) - avg
                         val levels = if (quietBy >= 10f) 3 else if (quietBy >= 5f) 2 else 1
                         val moved = step(+1, levels)
@@ -327,7 +331,7 @@ class LevelerService : Service() {
         private const val CHANNEL = "leveler"
         private const val LOWER_MIN_LEVELS = 3
         private const val LOWER_MAX_LEVELS = 6
-        private const val MAX_DROP_LEVELS = 8      // most levels cut within one window (~9 dB)
+        private const val MAX_DROP_LEVELS = 5      // most levels cut within one window (~5-6 dB)
         private const val DROP_WINDOW_MS = 2500L
         private const val SLOW_ATTACK = 0.12f      // per 50 ms chunk (~0.4 s)
         private const val SLOW_RELEASE = 0.03f
