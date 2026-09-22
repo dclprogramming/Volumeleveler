@@ -43,6 +43,7 @@ class LevelerService : Service() {
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
     private var lastSync = 0L
+    private var lastNotify = 0L
     private val main = Handler(Looper.getMainLooper())
     private var overlay: TextView? = null
 
@@ -196,6 +197,13 @@ class LevelerService : Service() {
         t.start()
     }
 
+    /** Your volume (0-100-ish scale) expressed as a loudness percent, i.e. the loudness target. */
+    private fun targetDb(): Float {
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val pct = if (maxVol > 0) baseVol * 100f / maxVol else 0f
+        return pct - 100f // inverse of MainActivity.pct(): pct = dbfs + 100
+    }
+
     private fun captureLoop(gen: Int) {
         val rate = 16000
         val minBuf = AudioRecord.getMinBufferSize(
@@ -226,13 +234,13 @@ class LevelerService : Service() {
             val buf = ShortArray(rate / 20) // 50 ms chunks
             var avg = Float.NaN   // fast: decides WHEN it is loud
             var slow = Float.NaN  // steadier: decides HOW MUCH to cut
+            var floorEst = Float.NaN // adaptive room noise floor: falls fast, rises slowly
             var dropWindowStart = 0L
             var dropInWindow = 0
             var aboveSince = 0L   // when the mic started hearing more than the silent room
             var lastAdjust = 0L
             var silentSince = 0L
-            var lastNotify = 0L
-
+            
             while (gen == generation.get()) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n < 0) {
@@ -250,6 +258,10 @@ class LevelerService : Service() {
                 // Fast attack (loud sounds register within ~100 ms), slow release (~1.5 s).
                 avg = if (avg.isNaN()) db else avg + (if (db > avg) ATTACK else RELEASE) * (db - avg)
                 slow = if (slow.isNaN()) db else slow + (if (db > slow) SLOW_ATTACK else SLOW_RELEASE) * (db - slow)
+                // Room noise floor: falls quickly to find true quiet, rises slowly so a long
+                // loud programme doesn't drag it up. Silence floor = this + FLOOR_MARGIN_DB.
+                floorEst = if (floorEst.isNaN()) db
+                    else floorEst + (if (db < floorEst) FLOOR_FALL else FLOOR_RISE) * (db - floorEst)
                 State.levelDb = avg
 
                 val now = SystemClock.elapsedRealtime()
@@ -267,13 +279,12 @@ class LevelerService : Service() {
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
 
-                val target = Prefs.target(this)
-                val tol = Prefs.tolerance(this)
-                val loudBy = avg - (target + tol)
+                val target = targetDb()
+                val loudBy = avg - (target + TOLERANCE_DB)
                 if (now - dropWindowStart > DROP_WINDOW_MS) { dropWindowStart = now; dropInWindow = 0 }
                 val dropRoom = MAX_DROP_LEVELS - dropInWindow
-                // "Content present" = the mic has heard clearly more than the silent room.
-                if (avg > Prefs.silence(this) + SILENCE_MARGIN_DB) {
+                // "Content present" = the mic has heard clearly more than the room's own noise floor.
+                if (avg > floorEst + FLOOR_MARGIN_DB) {
                     if (aboveSince == 0L) aboveSince = now
                 } else {
                     aboveSince = 0L
@@ -284,7 +295,7 @@ class LevelerService : Service() {
                     loudBy > 0 && dropRoom > 0 && now - lastAdjust >= LOWER_COOLDOWN -> {
                         // Size the cut from the steadier level, so a one-off spike in an
                         // explosion doesn't cause a huge drop; and cap the total cut per window.
-                        val slowBy = slow - (target + tol)
+                        val slowBy = slow - (target + TOLERANCE_DB)
                         val levels = minOf(
                             floor(slowBy * CUT_DAMPING / DB_PER_LEVEL).toInt().coerceIn(LOWER_MIN_LEVELS, LOWER_MAX_LEVELS),
                             dropRoom
@@ -301,11 +312,11 @@ class LevelerService : Service() {
                     // own cut) always proceeds - we caused the drop, so content is present.
                     // Going ABOVE your volume (the boost) still needs contentPresent, so a
                     // silent room never gets boosted.
-                    avg < target - tol && now - lastAdjust >= RAISE_COOLDOWN &&
+                    avg < target - TOLERANCE_DB && now - lastAdjust >= RAISE_COOLDOWN &&
                         (am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol || contentPresent) -> {
                         // The quieter the scene, the more levels it gets back (1-3), and
                         // recovery moves faster than boosting above your own volume.
-                        val quietBy = (target - tol) - avg
+                        val quietBy = (target - TOLERANCE_DB) - avg
                         val levels = if (quietBy >= 8f) 3 else if (quietBy >= 4f) 2 else 1
                         val moved = step(+1, levels)
                         avg += moved * DB_PER_LEVEL
@@ -336,7 +347,7 @@ class LevelerService : Service() {
             return 0
         }
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val lo = ceil(maxVol * Prefs.minPct(this) / 100.0).toInt()
+        val lo = ceil(maxVol * MIN_PCT / 100.0).toInt()
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val hi = ceilingLevels()
 
@@ -404,7 +415,11 @@ class LevelerService : Service() {
     companion object {
         private const val CHANNEL = "leveler"
         private const val NOTIFY_MS = 2000L
-        private const val SILENCE_MARGIN_DB = 4f  // must be this far above the silence floor to count as content
+        private const val MIN_PCT = 10            // hardwired minimum volume
+        private const val TOLERANCE_DB = 1f        // hardwired loudness tolerance (+-1%)
+        private const val FLOOR_MARGIN_DB = 3f     // dynamic silence floor = room noise floor + 3
+        private const val FLOOR_FALL = 0.05f       // per 50 ms chunk - floor tracks quiet fast
+        private const val FLOOR_RISE = 0.002f      // per 50 ms chunk - floor rises slowly
         private const val LOWER_MIN_LEVELS = 3
         private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
         private const val LOWER_MAX_LEVELS = 5
