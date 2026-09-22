@@ -213,7 +213,7 @@ class LevelerService : Service() {
                         // explosion doesn't cause a huge drop; and cap the total cut per window.
                         val slowBy = slow - (target + tol)
                         val levels = minOf(
-                            ceil(slowBy / DB_PER_LEVEL).toInt().coerceIn(LOWER_MIN_LEVELS, LOWER_MAX_LEVELS),
+                            floor(slowBy * CUT_DAMPING / DB_PER_LEVEL).toInt().coerceIn(LOWER_MIN_LEVELS, LOWER_MAX_LEVELS),
                             dropRoom
                         )
                         val moved = step(-1, levels)
@@ -233,7 +233,7 @@ class LevelerService : Service() {
                         // The quieter the scene, the more levels it gets back (1-3), and
                         // recovery moves faster than boosting above your own volume.
                         val quietBy = (target - tol) - avg
-                        val levels = if (quietBy >= 10f) 3 else if (quietBy >= 5f) 2 else 1
+                        val levels = if (quietBy >= 8f) 3 else if (quietBy >= 4f) 2 else 1
                         val moved = step(+1, levels)
                         avg += moved * DB_PER_LEVEL
                         slow += moved * DB_PER_LEVEL
@@ -330,17 +330,18 @@ class LevelerService : Service() {
     companion object {
         private const val CHANNEL = "leveler"
         private const val LOWER_MIN_LEVELS = 3
-        private const val LOWER_MAX_LEVELS = 6
-        private const val MAX_DROP_LEVELS = 5      // most levels cut within one window (~5-6 dB)
+        private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
+        private const val LOWER_MAX_LEVELS = 5
+        private const val MAX_DROP_LEVELS = 4      // most levels cut within one window (~4-5 dB)
         private const val DROP_WINDOW_MS = 2500L
-        private const val SLOW_ATTACK = 0.12f      // per 50 ms chunk (~0.4 s)
+        private const val SLOW_ATTACK = 0.20f      // per 50 ms chunk (~0.25 s) - faster reaction
         private const val SLOW_RELEASE = 0.03f
         private const val SILENCE_MARGIN_DB = 4f  // must be this far above the silence floor to count as content
         private const val CONTENT_HOLD_MS = 2000L
         private const val DB_PER_LEVEL = 1.1f   // roughly what one volume level changes, in dB
         private const val ATTACK = 0.5f         // per 50 ms chunk
         private const val RELEASE = 0.03f
-        private const val LOWER_COOLDOWN = 600L
-        private const val RAISE_COOLDOWN = 1200L
+        private const val LOWER_COOLDOWN = 400L
+        private const val RAISE_COOLDOWN = 900L
     }
 }
