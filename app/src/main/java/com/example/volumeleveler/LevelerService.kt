@@ -160,18 +160,21 @@ class LevelerService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Volume Leveler running")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
-            .setContentIntent(open)
-            .setOngoing(true)
-            .build()
+    val openIntent = Intent(this, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
     }
+    val open = PendingIntent.getActivity(
+        this, 0, openIntent,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+    return Notification.Builder(this, CHANNEL)
+        .setContentTitle("Volume Leveler running")
+        .setContentText(text)
+        .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+        .setContentIntent(open)
+        .setOngoing(true)
+        .build()
+}
 
     /** Lets you check the room reading from the notification shade without leaving your show. */
     private fun updateNotification(now: Long) {
