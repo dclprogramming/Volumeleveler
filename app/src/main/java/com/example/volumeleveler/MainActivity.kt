@@ -208,14 +208,26 @@ class MainActivity : Activity() {
      *  fired back-to-back — on this HDMI-CEC/ARC output, steps sent too fast seem to
      *  get partially reverted once the amp reports its real level back over CEC. */
     private fun maybeBoostVolumeOnLock() {
-        if (pct(Prefs.silence(this)) < 20) return
-        val am = getSystemService(AudioManager::class.java)
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val base = if (State.running && State.baseVol >= 0) State.baseVol else am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val target = (base + 5).coerceAtMost(maxVol)
-        Prefs.setTarget(this, Prefs.target(this) + 5f)
-        boostStep(am, target, 0)
+    if (pct(Prefs.silence(this)) < 20) return
+
+    val am = getSystemService(AudioManager::class.java)
+    val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+    val target = (current + 5).coerceAtMost(maxVol)
+    val steps = target - current
+    if (steps <= 0) return
+
+    // Use adjustStreamVolume (same path as the remote) – much more reliable on TV + ARC
+    repeat(steps) {
+        am.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            AudioManager.ADJUST_RAISE,
+            0
+        )
+        // Tiny pause helps some TVs/receivers actually accept every step
+        try { Thread.sleep(40) } catch (_: InterruptedException) {}
     }
+}
 
     private fun boostStep(am: AudioManager, target: Int, stepsSoFar: Int) {
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
