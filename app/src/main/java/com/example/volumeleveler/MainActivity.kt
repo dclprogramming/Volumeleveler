@@ -332,13 +332,13 @@ class MainActivity : Activity() {
         topView.text = "Your volume: $yourVol/$maxVol\nCeiling volume: $ceiling/$maxVol\nRoom loudness: $level"
 
         val saved = Prefs.mic(this)
-        val micLabel = if (saved.isEmpty()) "Auto (best available)"
+        val micLabel = if (saved.isEmpty()) "Auto"
         else MicSelector.list(this).firstOrNull { MicSelector.key(it) == saved }
             ?.let { MicSelector.label(it) } ?: "Auto (chosen mic not connected)"
         val overlayLabel = if (Prefs.overlayOn(this)) "Enabled" else "Disabled"
 
         statusView.text = "Status: ${State.status}\nMic in use: ${State.micName}" +
-            "\nMic: $micLabel (press Mic selector to change)\nLive overlay: $overlayLabel"
+            "\nMic: $micLabel \nLive overlay: $overlayLabel"
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
     }
 
