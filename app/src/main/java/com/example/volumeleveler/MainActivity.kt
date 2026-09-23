@@ -200,40 +200,27 @@ class MainActivity : Activity() {
     }
 
     /** If the just-locked silence floor is loud (>=20%), the room is noisier than usual,
-     *  so nudge volume up by 5 steps above the user's own manually-set volume (not
-     *  whatever the leveler has dynamically moved it to), capped at Max volume. Also
-     *  raises the loudness target by a matching 5 points, so a running leveler holds
-     *  onto the boosted level instead of correcting it back toward the old target.
-     *  Steps are spaced ~200ms apart (like an actual remote button press) rather than
-     *  fired back-to-back — on this HDMI-CEC/ARC output, steps sent too fast seem to
-     *  get partially reverted once the amp reports its real level back over CEC. */
+     *  so nudge volume up by 5 steps above the user's current volume, capped at max.
+     *  Uses rapid adjustStreamVolume calls (same path as the remote) for best reliability
+     *  on HDMI-CEC / ARC. */
     private fun maybeBoostVolumeOnLock() {
-    if (pct(Prefs.silence(this)) < 20) return
+        if (pct(Prefs.silence(this)) < 20) return
 
-    val am = getSystemService(AudioManager::class.java)
-    val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-    val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val target = (current + 5).coerceAtMost(maxVol)
-    val steps = target - current
-    if (steps <= 0) return
+        val am = getSystemService(AudioManager::class.java)
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val targetVol = (current + 5).coerceAtMost(maxVol)
+        val steps = targetVol - current
+        if (steps <= 0) return
 
-    // Use adjustStreamVolume (same path as the remote) – much more reliable on TV + ARC
-    repeat(steps) {
-        am.adjustStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            AudioManager.ADJUST_RAISE,
-            0
-        )
-        // Tiny pause helps some TVs/receivers actually accept every step
-        try { Thread.sleep(40) } catch (_: InterruptedException) {}
-    }
-}
-
-    private fun boostStep(am: AudioManager, target: Int, stepsSoFar: Int) {
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (cur >= target || stepsSoFar >= 10) return
-        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
-        handler.postDelayed({ boostStep(am, target, stepsSoFar + 1) }, 200)
+        // Fast successive raises – closest we can get to an instant snap on TV/ARC
+        repeat(steps) {
+            am.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                AudioManager.ADJUST_RAISE,
+                0
+            )
+        }
     }
 
     private fun syncTargetFromSilence() {
