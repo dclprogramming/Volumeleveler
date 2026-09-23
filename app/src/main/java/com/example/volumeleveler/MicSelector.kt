@@ -29,10 +29,10 @@ object MicSelector {
             AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> "USB"
             AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired"
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
-            AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Built-in"
+            AudioDeviceInfo.TYPE_BUILTIN_MIC -> "TV"
             else -> "Other"
         }
-        return "$kind: ${d.productName}"
+        return "$kind - ${d.productName}"
     }
 
     /** The user's chosen mic if present, else the best available; null = system default. */
