@@ -1,7 +1,6 @@
 # Volume Leveler (Google TV / Android TV)
 
-Listens through a mic (auto-picks USB > wired > Bluetooth > built-in, or choose one) and nudges
-the TV's master volume to keep the room level near a target room loudness setting.
+Listens through a mic (auto-picks Built-in > USB > Bluetooth, or choose manually) to dynamically nudge the TV's volume up & down, keeping the rooms overall noise level near a set target. The apps primary function is to fix movies that go from normal volume to blasting you into another dimension to whispering by stabilizing and leveling audio output.   
 
 Volume Control Compatibility:
 | Output / Setup                          | Works?      | Notes                                    |
@@ -31,3 +30,5 @@ Installation Instructions:
 5. Open the Volume Leveler app from your home screen apps.
 6. Click Allow on all prompts to grant access to the system microphone.
 7. Follow instructions at the bottom of the app display.
+
+* Tested on Hisense U8K connected to Yamaha RXV-475 via HDMI/Arc port
