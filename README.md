@@ -31,4 +31,4 @@ Installation Instructions:
 6. Click Allow on all prompts to grant access to the system microphone.
 7. Follow instructions at the bottom of the app display.
 
-* Tested on Hisense U8K connected to Yamaha RXV-475 via HDMI/Arc port
+* Tested on Hisense U8K connected to Yamaha RXV-475 receiver via the HDMI/Arc port.
