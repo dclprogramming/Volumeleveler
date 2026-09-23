@@ -96,7 +96,7 @@ class LevelerService : Service() {
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                 val tv = TextView(this).apply {
                     setTextColor(android.graphics.Color.WHITE)
-                    setBackgroundColor(android.graphics.Color.parseColor("#B0000000"))
+                    setBackgroundColor(android.graphics.Color.parseColor("#FF000000"))
                     setPadding(18, 10, 18, 10)
                     textSize = 13f
                     text = "Volume Leveler"
