@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_intercept_description">Hold Back + Down together for 3 seconds, from any app, to jump straight to Volume Leveler. Set this up once under Settings &gt; Accessibility &gt; Enable accessibility shortcut, then set Shortcut service to \"Volume Leveler shortcut.\"</string>
+</resources>
