@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    No key-event filtering here anymore - that was the cause of the system-wide input
+    lag. This now rides Google TV's built-in Accessibility Shortcut (Settings >
+    Accessibility > Enable accessibility shortcut > Shortcut service), which the
+    system implements itself and costs nothing while this service is idle.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/key_intercept_description"
+    android:notificationTimeout="100" />
