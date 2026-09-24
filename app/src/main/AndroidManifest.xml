@@ -36,5 +36,18 @@
             android:name=".LevelerService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".KeyInterceptService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="Volume Leveler shortcut (long-press Back)">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/key_intercept_service_config" />
+        </service>
     </application>
 </manifest>
