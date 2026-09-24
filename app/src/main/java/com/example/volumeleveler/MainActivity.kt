@@ -207,7 +207,7 @@ private fun maybeBoostVolumeOnLock() {
     val am = getSystemService(AudioManager::class.java)
     val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
     val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val targetVol = (current + 3).coerceAtMost(maxVol)
+    val targetVol = (current + 4).coerceAtMost(maxVol)
     if (targetVol <= current) return
 
     // 1. Try to snap
