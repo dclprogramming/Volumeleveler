@@ -198,30 +198,39 @@ class MainActivity : Activity() {
         syncTargetFromSilence()
         maybeBoostVolumeOnLock()
     }
+    
+/** If the just-locked silence floor is loud (>=20%), raise volume by 5 steps.
+ *  Tries an absolute set first, then verifies and corrects with adjusts.
+ *  This is the most reliable pattern on Google TV + ARC/eARC. */
+private fun maybeBoostVolumeOnLock() {
+    if (pct(Prefs.silence(this)) < 20) return
 
-    /** If the just-locked silence floor is loud (>=20%), the room is noisier than usual,
-     *  so nudge volume up by 5 steps above the user's current volume, capped at max.
-     *  Uses rapid adjustStreamVolume calls (same path as the remote) for best reliability
-     *  on HDMI-CEC / ARC. */
-    private fun maybeBoostVolumeOnLock() {
-        if (pct(Prefs.silence(this)) < 20) return
+    val am = getSystemService(AudioManager::class.java)
+    val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+    val targetVol = (current + 5).coerceAtMost(maxVol)
+    if (targetVol <= current) return
 
-        val am = getSystemService(AudioManager::class.java)
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val targetVol = (current + 5).coerceAtMost(maxVol)
-        val steps = targetVol - current
-        if (steps <= 0) return
+    // 1. Try to snap directly
+    am.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
 
-        // Fast successive raises – closest we can get to an instant snap on TV/ARC
-        repeat(steps) {
-            am.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_RAISE,
-                0
-            )
+    // 2. After a short settle, check where it actually landed and correct
+    handler.postDelayed({
+        val now = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (now == targetVol) return@postDelayed
+
+        val diff = targetVol - now
+        val direction = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        val steps = kotlin.math.abs(diff).coerceAtMost(10)
+
+        fun step(remaining: Int) {
+            if (remaining <= 0) return
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+            handler.postDelayed({ step(remaining - 1) }, 180) // give CEC time to acknowledge
         }
-    }
+        step(steps)
+    }, 350)
+}
 
     private fun syncTargetFromSilence() {
         Prefs.setTarget(this, computedTargetDb(Prefs.silence(this)))
