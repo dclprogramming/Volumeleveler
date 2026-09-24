@@ -34,6 +34,6 @@ object Prefs {
     fun setSilenceLocked(c: Context, v: Boolean) = sp(c).edit().putBoolean("silenceLocked", v).apply()
 
     /** Small on-screen readout (needs "Draw over other apps") while leveling runs. */
-    fun overlayOn(c: Context): Boolean = sp(c).getBoolean("overlay", true)
+    fun overlayOn(c: Context): Boolean = sp(c).getBoolean("overlay", false)
     fun setOverlayOn(c: Context, v: Boolean) = sp(c).edit().putBoolean("overlay", v).apply()
 }
