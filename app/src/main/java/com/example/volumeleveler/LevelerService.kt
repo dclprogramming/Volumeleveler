@@ -372,8 +372,6 @@ class LevelerService : Service() {
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (adjusted) {
             adjusted = false // just learn where our own change landed
-        } else if (cur != knownVol) {
-            baseVol = cur
         }
         knownVol = cur
         State.baseVol = baseVol
