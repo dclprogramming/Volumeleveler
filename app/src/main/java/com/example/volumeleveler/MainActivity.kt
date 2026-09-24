@@ -199,25 +199,39 @@ class MainActivity : Activity() {
         maybeBoostVolumeOnLock()
     }
     
-/** If silence floor ≥ 20%, raise volume by exactly 5 steps.
- *  Simple spaced adjustStreamVolume only — no absolute set, no later correction.
- *  This is the least aggressive and usually most stable on Google TV + ARC. */
+/** If silence floor ≥ 20%, try to raise volume by exactly 5.
+ *  Best-performing method on this TV: absolute set + single gentle correction. */
 private fun maybeBoostVolumeOnLock() {
     if (pct(Prefs.silence(this)) < 20) return
 
     val am = getSystemService(AudioManager::class.java)
     val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
     val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val stepsNeeded = (current + 5).coerceAtMost(maxVol) - current
-    if (stepsNeeded <= 0) return
+    val targetVol = (current + 5).coerceAtMost(maxVol)
+    if (targetVol <= current) return
 
-    fun doStep(remaining: Int) {
-        if (remaining <= 0) return
-        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
-        handler.postDelayed({ doStep(remaining - 1) }, 230) // CEC-friendly spacing
-    }
+    // 1. Try to snap
+    am.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
 
-    doStep(stepsNeeded)
+    // 2. One correction pass after the TV/receiver has had time to settle
+    handler.postDelayed({
+        val now = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (now == targetVol) return@postDelayed
+
+        val diff = targetVol - now
+        // Limit correction so we don’t overshoot badly
+        val steps = kotlin.math.abs(diff).coerceAtMost(4)
+        val direction = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+
+        fun correct(remaining: Int) {
+            if (remaining <= 0) return
+            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (cur == targetVol) return          // already there – stop early
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+            handler.postDelayed({ correct(remaining - 1) }, 200)
+        }
+        correct(steps)
+    }, 450)
 }
 
     private fun syncTargetFromSilence() {
