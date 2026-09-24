@@ -199,7 +199,7 @@ class MainActivity : Activity() {
         maybeBoostVolumeOnLock()
     }
     
-/** If silence floor ≥ 20%, try to raise volume by exactly 5.
+/** If silence floor ≥ 20%, try to raise volume by exactly 5. 
  *  Best-performing method on this TV: absolute set + single gentle correction. */
 private fun maybeBoostVolumeOnLock() {
     if (pct(Prefs.silence(this)) < 20) return
