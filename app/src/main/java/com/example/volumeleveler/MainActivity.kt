@@ -34,8 +34,17 @@ class MainActivity : Activity() {
     private lateinit var overlayBtn: Button
     private var pendingStart = false
     private var pendingPreviewPermission = false
+    private var autoPromptedForKeyIntercept = false
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
+
+    /** Whether the user has turned on KeyInterceptService under Settings > Accessibility. */
+    private fun isKeyInterceptEnabled(): Boolean {
+        val target = "$packageName/${KeyInterceptService::class.java.name}"
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?: return false
+        return enabled.split(':').any { it.equals(target, ignoreCase = true) }
+    }
 
     /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
     private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
@@ -177,6 +186,18 @@ class MainActivity : Activity() {
 
         setContentView(rowContainer)
         toggleBtn.requestFocus()
+
+        // Guide the user straight to Accessibility Settings on open, until they turn
+        // the shortcut on - after that this never fires again. Only once per real
+        // launch (not on every onResume), so returning from Settings doesn't loop.
+        if (!autoPromptedForKeyIntercept && !isKeyInterceptEnabled()) {
+            autoPromptedForKeyIntercept = true
+            Toast.makeText(this,
+                "On the next screen, find \"Volume Leveler shortcut\" and turn it on. " +
+                    "Then long-press Back anywhere to jump here.",
+                Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
 
         // Match the 3 action buttons' width to the Silence floor row's Set/-/+ combined
         // width, once that row has actually been measured (post{} runs after layout).
