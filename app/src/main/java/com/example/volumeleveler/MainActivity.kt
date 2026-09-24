@@ -170,6 +170,7 @@ class MainActivity : Activity() {
         // ---- Full-width row: 34% instructions | 66% controls ----
         val rowContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(panelBg)
         }
         rowContainer.addView(left, LinearLayout.LayoutParams(screenW * 34 / 100, LinearLayout.LayoutParams.MATCH_PARENT))
         rowContainer.addView(right, LinearLayout.LayoutParams(rightColW, LinearLayout.LayoutParams.MATCH_PARENT))
