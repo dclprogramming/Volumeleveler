@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val screenW = resources.displayMetrics.widthPixels
-        val panelBg = Color.parseColor("#101418")
+        val panelBg = Color.parseColor("#CC101418")
         val rightColW = screenW * 66 / 100
         // Percentage of the right column's own width, not a fixed dp value, so the
         // three action buttons stay proportionally sized and everything fits at
