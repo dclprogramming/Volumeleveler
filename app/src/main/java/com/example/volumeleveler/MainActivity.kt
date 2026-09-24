@@ -200,43 +200,24 @@ class MainActivity : Activity() {
     }
     
 /** If silence floor ≥ 20%, raise volume by exactly 5 steps.
- *  Uses spaced adjustStreamVolume calls + a final verification/correction
- *  pass. This is the most reliable method on Google TV + ARC. */
+ *  Simple spaced adjustStreamVolume only — no absolute set, no later correction.
+ *  This is the least aggressive and usually most stable on Google TV + ARC. */
 private fun maybeBoostVolumeOnLock() {
     if (pct(Prefs.silence(this)) < 20) return
 
     val am = getSystemService(AudioManager::class.java)
     val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-    val startVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val targetVol = (startVol + 5).coerceAtMost(maxVol)
-    if (targetVol <= startVol) return
+    val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+    val stepsNeeded = (current + 5).coerceAtMost(maxVol) - current
+    if (stepsNeeded <= 0) return
 
-    fun adjustToward(target: Int, remainingAttempts: Int) {
-        if (remainingAttempts <= 0) return
-
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (cur == target) return
-
-        val direction = if (cur < target) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
-
-        // Give CEC/ARC time to acknowledge, then continue or correct
-        handler.postDelayed({
-            adjustToward(target, remainingAttempts - 1)
-        }, 220)
+    fun doStep(remaining: Int) {
+        if (remaining <= 0) return
+        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
+        handler.postDelayed({ doStep(remaining - 1) }, 230) // CEC-friendly spacing
     }
 
-    // First pass: try to reach target (max 8 steps so we don't run forever)
-    adjustToward(targetVol, 8)
-
-    // Final safety check after everything settles
-    handler.postDelayed({
-        val finalVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (finalVol != targetVol) {
-            // One more short correction burst
-            adjustToward(targetVol, 6)
-        }
-    }, 1800)
+    doStep(stepsNeeded)
 }
 
     private fun syncTargetFromSilence() {
