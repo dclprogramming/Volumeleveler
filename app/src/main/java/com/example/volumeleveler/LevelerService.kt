@@ -75,37 +75,17 @@ class LevelerService : Service() {
     }
 
     override fun onDestroy() {
-    generation.incrementAndGet()
-    worker?.join(1500)
-    if (registered) am.unregisterAudioDeviceCallback(deviceCb)
-    registered = false
-    disableSco()
-    removeOverlay()
-
-    // Reset volume back to the level the user had when leveling started
-    if (baseVol >= 0 && !am.isVolumeFixed) {
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (cur != baseVol) {
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, baseVol, 0)
-            // Some ARC/CEC setups ignore absolute set; nudge with adjust if needed
-            val after = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            if (after != baseVol) {
-                val dir = if (baseVol > after) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                var steps = kotlin.math.abs(baseVol - after).coerceAtMost(20)
-                while (steps-- > 0 && am.getStreamVolume(AudioManager.STREAM_MUSIC) != baseVol) {
-                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-                }
-            }
-        }
+        generation.incrementAndGet()
+        worker?.join(1500)
+        if (registered) am.unregisterAudioDeviceCallback(deviceCb)
+        registered = false
+        disableSco()
+        removeOverlay()
+        State.running = false
+        State.status = "Stopped"
+        // (Room loudness is left as-is; LevelPreview picks up mic listening again.)
+        super.onDestroy()
     }
-
-    State.running = false
-    State.status = "Stopped"
-    State.baseVol = -1
-    State.ceiling = -1
-    // (Room loudness is left as-is; LevelPreview picks up mic listening again.)
-    super.onDestroy()
-}
 
     // ---- on-screen overlay (works over Tubi/any app; needs "Draw over other apps") ----
     private fun addOverlay() {
