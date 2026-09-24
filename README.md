@@ -24,7 +24,7 @@ Digital audio out (optical/SPDIF)
 Installation Instructions:
 1. Install the Downloader app on your TV.
 2. In the Downloader app on the TV, enter the following as a favorite:
-   https://github.com//<user>/<repo>/releases/latest/download/app-debug.apk
+   https://github.com/dclprogramming/Volumeleveler/releases/latest/download/app-debug.apk
 3. Navigate to favorites and click on the link to install.
 4. Allow "Install unknown apps" for Downloader when prompted, then install.
 5. Open the Volume Leveler app from your home screen apps.
