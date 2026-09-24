@@ -178,6 +178,20 @@ class MainActivity : Activity() {
         setContentView(rowContainer)
         toggleBtn.requestFocus()
 
+        // Guide the user to Accessibility Settings to set up the Back+Down shortcut -
+        // but only ever once, ever. The service's own enabled/disabled state flips on
+        // every use of the shortcut by design, so (unlike before) we can't use that to
+        // detect whether setup is done; a persisted flag is the only reliable signal.
+        if (!Prefs.shortcutSetupPrompted(this)) {
+            Prefs.setShortcutSetupPrompted(this, true)
+            Toast.makeText(this,
+                "One-time setup: turn on \"Enable accessibility shortcut,\" then set " +
+                    "Shortcut service to \"Volume Leveler shortcut.\" After that, hold " +
+                    "Back + Down for 3 seconds from any app to jump here.",
+                Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
         // Match the 3 action buttons' width to the Silence floor row's Set/-/+ combined
         // width, once that row has actually been measured (post{} runs after layout).
         rowContainer.post {

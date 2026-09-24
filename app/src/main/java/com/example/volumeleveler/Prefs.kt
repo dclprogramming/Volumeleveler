@@ -36,4 +36,11 @@ object Prefs {
     /** Small on-screen readout (needs "Draw over other apps") while leveling runs. */
     fun overlayOn(c: Context): Boolean = sp(c).getBoolean("overlay", false)
     fun setOverlayOn(c: Context, v: Boolean) = sp(c).edit().putBoolean("overlay", v).apply()
+
+    /** Whether we've already sent the user to Settings > Accessibility to set up the
+     *  Back+Down shortcut. Only ever prompt once - the shortcut service's own
+     *  enabled/disabled state flips on every use by design, so it can't be used to
+     *  tell whether setup happened. */
+    fun shortcutSetupPrompted(c: Context): Boolean = sp(c).getBoolean("shortcutSetupPrompted", false)
+    fun setShortcutSetupPrompted(c: Context, v: Boolean) = sp(c).edit().putBoolean("shortcutSetupPrompted", v).apply()
 }
