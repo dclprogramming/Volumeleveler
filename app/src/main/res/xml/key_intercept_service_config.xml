@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    accessibilityEventTypes is a required attribute, but this service doesn't actually
+    use accessibility events at all - only key-event filtering (a separate delivery
+    pipeline, unaffected by this value). typeAllMask was subscribing us to EVERY
+    accessibility event system-wide (every scroll, focus change, UI update in whatever
+    app is on screen, e.g. Tubi's playback UI), which was competing for CPU/IPC and made
+    the whole remote - including volume keys - feel laggy. typeWindowStateChanged only
+    fires on full window/activity changes, so traffic drops to almost nothing.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="false"
