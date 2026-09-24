@@ -4,5 +4,5 @@
     android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="false"
-    android:description="Long-press Back to jump straight to Volume Leveler from any app. A normal single tap of Back still works as usual."
+    android:description="@string/key_intercept_description"
     android:notificationTimeout="100" />
