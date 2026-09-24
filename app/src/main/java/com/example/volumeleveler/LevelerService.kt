@@ -88,7 +88,6 @@ class LevelerService : Service() {
     }
 
     // ---- on-screen overlay (works over Tubi/any app; needs "Draw over other apps") ----
-
     private fun addOverlay() {
         if (overlay != null || !Settings.canDrawOverlays(this) || !Prefs.overlayOn(this)) return
         main.post {
