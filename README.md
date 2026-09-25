@@ -29,6 +29,11 @@ Installation Instructions:
 4. Allow "Install unknown apps" for Downloader when prompted, then install.
 5. Open the Volume Leveler app from your home screen apps.
 6. Click Allow on all prompts to grant access to the system microphone.
-7. Follow instructions at the bottom of the app display.
+   -In the Accessibility Settings page-
+   1.Select the Accessibility Shortcut option.
+   2.Enable the Accessibility Shortcut toggle.
+   3.Select Shortcut Service and set to Volume Leveler Shortcut.
+   4.Then back out of the Accessibility Settings. 
+8. Follow instructions in app for setup.
 
 * Tested on Hisense U8K connected to Yamaha RXV-475 receiver via the HDMI/Arc port.
