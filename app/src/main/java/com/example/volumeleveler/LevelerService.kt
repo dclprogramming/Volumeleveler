@@ -444,6 +444,6 @@ class LevelerService : Service() {
         private const val RELEASE = 0.05f       // per 50 ms chunk (~1.0 s decay) - was 0.03f (~1.6 s)
         private const val LOWER_COOLDOWN = 400L
         private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
-        private const val RAISE_COOLDOWN = 400L
+        private const val RAISE_COOLDOWN = 900L
     }
 }
