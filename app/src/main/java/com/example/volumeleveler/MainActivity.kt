@@ -158,12 +158,12 @@ class MainActivity : Activity() {
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
                 "2. Press Set on Silence floor to capture the current room's Loudness level " +
-                "(the app adds a +3% buffer) — this also sets your Loudness target automatically.\n\n" +
-                "3. Optional: tweak Loudness tolerance, Max volume, or Boost quiet scenes value.\n\n" +
-                "4. Press Start leveling, then start your movie.\n\n" +
+                "(app adds +3% buffer) — this also sets your Loudness target automatically.\n\n" +
+                "3. Press Start Leveling, then start your movie.\n\n" +
                 "If the HVAC kicks on mid-movie and the audio gets too quiet, reopen Volume " +
-                "Leveler from your TV inputs and press Set on Silence floor again to " +
-                "recalibrate, then go back. If the room's Loudness is set at ≥20, the set " +
+                "Leveler by holding Back + Down for 5 seconds or from your TV inputs menu on some TV's " +
+                "and then hit Stop Leveling, press Set on Silence floor again to " +
+                "recalibrate, hit Start Leveling, then go back. If the room's Loudness is detected/set at ≥20, the set " +
                 "volume will automatically be increased by 5.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
