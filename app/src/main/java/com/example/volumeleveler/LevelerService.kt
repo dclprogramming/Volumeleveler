@@ -303,8 +303,9 @@ class LevelerService : Service() {
                 }
                 val contentPresent = aboveSince != 0L && now - aboveSince >= CONTENT_HOLD_MS
                 when {
-                    // Loud: react right away, sized to how far over we are (at least 3 levels).
-                    loudBy > 0 && dropRoom > 0 && now - lastAdjust >= LOWER_COOLDOWN -> {
+                    // Loud: react right away once we're clearly over (past tolerance by a
+                    // real margin, not just a hair), sized to how far over we are.
+                    loudBy > LOWER_TRIGGER_MARGIN_DB && dropRoom > 0 && now - lastAdjust >= LOWER_COOLDOWN -> {
                         // Size the cut from the steadier level, so a one-off spike in an
                         // explosion doesn't cause a huge drop; and cap the total cut per window.
                         val slowBy = slow - (target + tol)
@@ -440,8 +441,9 @@ class LevelerService : Service() {
         private const val CONTENT_HOLD_MS = 2000L
         private const val DB_PER_LEVEL = 1.1f   // roughly what one volume level changes, in dB
         private const val ATTACK = 0.5f         // per 50 ms chunk
-        private const val RELEASE = 0.03f
+        private const val RELEASE = 0.05f       // per 50 ms chunk (~1.0 s decay) - was 0.03f (~1.6 s)
         private const val LOWER_COOLDOWN = 400L
-        private const val RAISE_COOLDOWN = 900L
+        private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
+        private const val RAISE_COOLDOWN = 400L
     }
 }
