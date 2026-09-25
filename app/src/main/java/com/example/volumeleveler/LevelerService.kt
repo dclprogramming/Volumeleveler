@@ -349,6 +349,14 @@ class LevelerService : Service() {
             State.status = "Volume is fixed on this output (cannot adjust)"
             return 0
         }
+        // Refuse to fire another burst while the previous one may still be landing on
+        // the TV/receiver (HDMI-CEC/ARC has real round-trip lag; Android's own stream
+        // index can look "settled" before the hardware actually is). Without this,
+        // the loop can stack bursts faster than the hardware confirms them, each one
+        // computed against a stale "current volume" - which is how limits get blown
+        // past even though every individual step() call believes it's respecting them.
+        if (SystemClock.elapsedRealtime() < settleUntil) return 0
+
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val lo = ceil(maxVol * MIN_PCT / 100.0).toInt()
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
