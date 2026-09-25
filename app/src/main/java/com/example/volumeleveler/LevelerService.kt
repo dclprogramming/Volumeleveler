@@ -206,7 +206,7 @@ class LevelerService : Service() {
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loud $loud  Target $tgt  Vol $cur/$maxVol")
+        updateOverlay("Loudness $loud  Target $tgt  Vol $cur/$maxVol")
     }
 
     // ---- capture + leveling ----
