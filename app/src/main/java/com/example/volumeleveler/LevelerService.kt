@@ -37,7 +37,8 @@ class LevelerService : Service() {
     private var worker: Thread? = null
     private var registered = false
     private var lastSig = ""
-    // Volume ceiling: starts at the volume when leveling began, then follows any manual change.
+    // Volume ceiling: captured once when leveling starts and held fixed until the next
+    // Stop/Start cycle. Manual remote changes while running are NOT applied to this.
     @Volatile private var baseVol = -1
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
@@ -81,6 +82,25 @@ class LevelerService : Service() {
         registered = false
         disableSco()
         removeOverlay()
+        // Put the system volume back where it was when leveling started, undoing any
+        // dynamic raise/lower drift from this session. Without this, "Your volume"
+        // shows wherever leveling happened to leave it, and a later Start leveling
+        // would wrongly capture that drifted level as the new baseline instead of
+        // your actual intended baseline. Step incrementally via adjustStreamVolume,
+        // same as the rest of the app, since that's what HDMI-CEC/ARC output needs.
+        if (baseVol >= 0 && !am.isVolumeFixed) {
+            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val diff = baseVol - cur
+            if (diff != 0) {
+                repeat(kotlin.math.abs(diff)) {
+                    am.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                        0
+                    )
+                }
+            }
+        }
         State.running = false
         State.status = "Stopped"
         // (Room loudness is left as-is; LevelPreview picks up mic listening again.)
@@ -362,9 +382,12 @@ class LevelerService : Service() {
     }
 
     /**
-     * Notices volume changes we didn't make (remote volume keys) and makes the new
-     * level the ceiling, whether the user turned it up or down. This also moves the
-     * loudness target, since the target always equals your volume.
+     * Tracks the current volume so our own adjustments (via step()) aren't mistaken for
+     * manual ones. The baseline (baseVol) is intentionally NOT re-captured here: while
+     * leveling is running, a manual remote adjustment just becomes the new "current"
+     * volume that leveling continues from — it does not move the ceiling or target.
+     * To set a new baseline, the user must press Stop leveling, adjust the volume, then
+     * Start leveling again (see onStartCommand, which captures baseVol fresh on start).
      */
     private fun syncVolume(now: Long) {
         if (now < settleUntil || now - lastSync < 250) return
