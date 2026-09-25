@@ -40,6 +40,7 @@ class LevelerService : Service() {
     // Volume ceiling: captured once when leveling starts and held fixed until the next
     // Stop/Start cycle. Manual remote changes while running are NOT applied to this.
     @Volatile private var baseVol = -1
+    @Volatile private var levelingStartElapsed = 0L
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
@@ -68,6 +69,7 @@ class LevelerService : Service() {
             registered = true
             baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             knownVol = baseVol
+            levelingStartElapsed = SystemClock.elapsedRealtime()
         }
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
@@ -252,7 +254,6 @@ class LevelerService : Service() {
             var slow = Float.NaN  // steadier: decides HOW MUCH to cut
             var dropWindowStart = 0L
             var dropInWindow = 0
-            var aboveSince = 0L   // when the mic started hearing more than the silent room
             var lastAdjust = 0L
             var silentSince = 0L
 
@@ -289,19 +290,13 @@ class LevelerService : Service() {
                 }
                 silentSince = 0L
                 if (State.status.startsWith("Mic is silent")) State.status = "Listening"
+                if (now - levelingStartElapsed >= STATS_DELAY_MS) State.recordStat(avg)
 
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val loudBy = avg - (target + tol)
                 if (now - dropWindowStart > DROP_WINDOW_MS) { dropWindowStart = now; dropInWindow = 0 }
                 val dropRoom = MAX_DROP_LEVELS - dropInWindow
-                // "Content present" = the mic has heard clearly more than the silent room.
-                if (avg > Prefs.silence(this) + SILENCE_MARGIN_DB) {
-                    if (aboveSince == 0L) aboveSince = now
-                } else {
-                    aboveSince = 0L
-                }
-                val contentPresent = aboveSince != 0L && now - aboveSince >= CONTENT_HOLD_MS
                 when {
                     // Loud: react right away once we're clearly over (past tolerance by a
                     // real margin, not just a hair), sized to how far over we are.
@@ -321,14 +316,12 @@ class LevelerService : Service() {
                         slow -= moved * DB_PER_LEVEL
                         lastAdjust = now
                     }
-                    // Quiet: come back up. Recovering toward your own volume (after the app's
-                    // own cut) always proceeds - we caused the drop, so content is present.
-                    // Going ABOVE your volume (the boost) still needs contentPresent, so a
-                    // silent room never gets boosted.
+                    // Quiet: come back up toward your own volume. The ceiling is always
+                    // your baseline (never boosted above it), so this only ever recovers
+                    // ground the app itself cut - it can't overshoot past where you set it.
                     avg < target - tol && now - lastAdjust >= RAISE_COOLDOWN &&
-                        (am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol || contentPresent) -> {
-                        // The quieter the scene, the more levels it gets back (1-3), and
-                        // recovery moves faster than boosting above your own volume.
+                        am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol -> {
+                        // The quieter the scene, the more levels it gets back (1-3).
                         val quietBy = (target - tol) - avg
                         val levels = if (quietBy >= 8f) 3 else if (quietBy >= 4f) 2 else 1
                         val moved = step(+1, levels)
@@ -348,11 +341,8 @@ class LevelerService : Service() {
         }
     }
 
-    /** Highest volume level the app may raise to: your volume + boost, and never above Max volume. */
-    private fun ceilingLevels(): Int {
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        return minOf(floor(maxVol * Prefs.maxPct(this) / 100.0).toInt(), baseVol + Prefs.boost(this))
-    }
+    /** Highest volume level the app may raise to: your own baseline, never above it. */
+    private fun ceilingLevels(): Int = baseVol
 
     private fun step(dir: Int, count: Int): Int {
         if (am.isVolumeFixed) {
@@ -429,7 +419,6 @@ class LevelerService : Service() {
     companion object {
         private const val CHANNEL = "leveler"
         private const val NOTIFY_MS = 2000L
-        private const val SILENCE_MARGIN_DB = 4f  // must be this far above the silence floor to count as content
         private const val MIN_PCT = 30             // hardwired minimum volume
         private const val LOWER_MIN_LEVELS = 3
         private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
@@ -438,12 +427,12 @@ class LevelerService : Service() {
         private const val DROP_WINDOW_MS = 2500L
         private const val SLOW_ATTACK = 0.20f      // per 50 ms chunk (~0.25 s) - faster reaction
         private const val SLOW_RELEASE = 0.03f
-        private const val CONTENT_HOLD_MS = 2000L
         private const val DB_PER_LEVEL = 1.1f   // roughly what one volume level changes, in dB
         private const val ATTACK = 0.5f         // per 50 ms chunk
         private const val RELEASE = 0.05f       // per 50 ms chunk (~1.0 s decay) - was 0.03f (~1.6 s)
         private const val LOWER_COOLDOWN = 400L
         private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
-        private const val RAISE_COOLDOWN = 900L
+        private const val RAISE_COOLDOWN = 400L
+        private const val STATS_DELAY_MS = 180_000L  // Loudness Statistics starts 3 minutes into a session
     }
 }

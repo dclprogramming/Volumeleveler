@@ -10,24 +10,23 @@ object Prefs {
     fun setMic(c: Context, v: String) = sp(c).edit().putString("mic", v).apply()
 
     /** Target room level in dBFS (uncalibrated, relative). Shown/edited as a 0-100 percent.
-     *  Derived from the silence floor via a formula; kept in sync automatically. */
+     *  Derived from the silence floor via a formula, or from Loudness Statistics if the
+     *  user pressed Set there; kept in sync automatically either way. */
     fun target(c: Context): Float = sp(c).getFloat("target", -55f)
     fun setTarget(c: Context, v: Float) = sp(c).edit().putFloat("target", v.coerceIn(-80f, -5f)).apply()
 
-    /** Dead-band in dB around the target where the volume is left alone. */
-    fun tolerance(c: Context): Float = sp(c).getFloat("tol", 1f)
-    fun setTolerance(c: Context, v: Float) = sp(c).edit().putFloat("tol", v.coerceIn(1f, 15f)).apply()
+    /** Whether the Loudness target is currently locked to the Loudness Statistics
+     *  average (via its Set button) rather than the silence-floor formula. Clearing
+     *  this (via Set on Silence floor) returns to the default formula. */
+    fun targetFromStats(c: Context): Boolean = sp(c).getBoolean("targetFromStats", false)
+    fun setTargetFromStats(c: Context, v: Boolean) = sp(c).edit().putBoolean("targetFromStats", v).apply()
 
-    fun maxPct(c: Context): Int = sp(c).getInt("maxPct", 50)
-    fun setMaxPct(c: Context, v: Int) = sp(c).edit().putInt("maxPct", v.coerceIn(5, 100)).apply()
+    /** Dead-band in dB around the target where the volume is left alone. Hardwired to 1%. */
+    fun tolerance(c: Context): Float = 1f
 
-    /** How many volume levels above your own volume quiet scenes may be boosted. */
-    fun boost(c: Context): Int = sp(c).getInt("boost", 3)
-    fun setBoost(c: Context, v: Int) = sp(c).edit().putInt("boost", v.coerceIn(0, 30)).apply()
-
-    /** Mic level (dBFS) of the quiet room with nothing playing; quiet-scene boost stays off near it.
-     *  Only meaningful once silenceLocked is true; until then, the UI shows a live value
-     *  (current room loudness + 3%) instead of this stored number. */
+    /** Mic level (dBFS) of the quiet room with nothing playing; only meaningful once
+     *  silenceLocked is true; until then, the UI shows a live value (current room
+     *  loudness + 3%) instead of this stored number. */
     fun silence(c: Context): Float = sp(c).getFloat("silence", -65f)
     fun setSilence(c: Context, v: Float) = sp(c).edit().putFloat("silence", v.coerceIn(-100f, -10f)).apply()
     fun silenceLocked(c: Context): Boolean = sp(c).getBoolean("silenceLocked", false)

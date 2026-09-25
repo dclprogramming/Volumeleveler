@@ -136,18 +136,13 @@ class MainActivity : Activity() {
             },
             captureButtons = { silenceRowButtons.addAll(it) }
         ))
-        right.addView(adjRow({ "Loudness target (from silence floor): ${pct(Prefs.target(this))}%" }) { d ->
+        right.addView(adjRow({
+            val source = if (Prefs.targetFromStats(this)) "from stats" else "from silence floor"
+            "Loudness target ($source): ${pct(Prefs.target(this))}%"
+        }) { d ->
             Prefs.setTarget(this, Prefs.target(this) + d)
         })
-        right.addView(adjRow({ "Loudness tolerance: ±${Prefs.tolerance(this).roundToInt()}%" }) { d ->
-            Prefs.setTolerance(this, Prefs.tolerance(this) + d)
-        })
-        right.addView(adjRow({ "Max volume: ${Prefs.maxPct(this)}%" }) { d ->
-            Prefs.setMaxPct(this, Prefs.maxPct(this) + d * 5)
-        })
-        right.addView(adjRow({ "Boost quiet scenes: up to +${Prefs.boost(this)} levels" }) { d ->
-            Prefs.setBoost(this, Prefs.boost(this) + d)
-        })
+        right.addView(statsRow())
 
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
@@ -158,12 +153,17 @@ class MainActivity : Activity() {
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
                 "2. Press Set on Silence floor to capture the current room's Loudness level " +
-                "(app adds +3% buffer) — this also sets your Loudness target automatically.\n\n" +
-                "3. Press Start Leveling, then start your movie.\n\n" +
+                "(the app adds a +3% buffer) — this also sets your Loudness target automatically.\n\n" +
+                "3. Press Start leveling, then start your movie. Max volume defaults to the " +
+                "volume you set in step 1 — the app never raises above it.\n\n" +
+                "4. About 3 minutes into playback, Loudness Statistics starts gathering " +
+                "High/Low/Avg readings until you press Stop leveling. Press Set next to it to " +
+                "lock your Loudness target to the measured average instead of the silence-floor " +
+                "formula, or Reset to clear the gathered numbers. Pressing Set on Silence floor " +
+                "always goes back to the default formula.\n\n" +
                 "If the HVAC kicks on mid-movie and the audio gets too quiet, reopen Volume " +
-                "Leveler by holding Back + Down for 5 seconds or from your TV inputs menu on some TV's " +
-                "and then hit Stop Leveling, press Set on Silence floor again to " +
-                "recalibrate, hit Start Leveling, then go back. If the room's Loudness is detected/set at ≥20, the set " +
+                "Leveler from your TV inputs and press Set on Silence floor again to " +
+                "recalibrate, then go back. If the room's Loudness is set at ≥20, the set " +
                 "volume will automatically be increased by 5.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
@@ -210,6 +210,7 @@ class MainActivity : Activity() {
     private fun lockSilence(liveDb: Float) {
         Prefs.setSilence(this, liveDb)
         Prefs.setSilenceLocked(this, true)
+        Prefs.setTargetFromStats(this, false)
         syncTargetFromSilence()
         maybeBoostVolumeOnLock()
     }
@@ -297,6 +298,38 @@ private fun maybeBoostVolumeOnLock() {
         return row
     }
 
+    /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Set (locks the Loudness target
+     *  to the measured average) and Reset (clears the gathered numbers). */
+    private fun statsRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val tv = text("", 16f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val set = Button(this).apply {
+            styleButton(this); text = "Set"; isAllCaps = false
+            setOnClickListener {
+                if (!State.statsAvg.isNaN()) {
+                    Prefs.setTarget(this@MainActivity, State.statsAvg)
+                    Prefs.setTargetFromStats(this@MainActivity, true)
+                }
+                reload(); refresh()
+            }
+        }
+        val reset = Button(this).apply {
+            styleButton(this); text = "Reset"; isAllCaps = false
+            setOnClickListener { State.resetStats(); reload(); refresh() }
+        }
+        row.addView(tv); row.addView(set); row.addView(reset)
+        fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
+        updaters.add {
+            tv.text = "Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}"
+        }
+        return row
+    }
+
     /** One line: "Title: value", then Set, then -, then +. Used for Loudness target / Silence floor. */
     private fun lockableRow(
         title: String, display: () -> String, onSet: () -> Unit, onAdjust: (Int) -> Unit,
@@ -343,7 +376,7 @@ private fun maybeBoostVolumeOnLock() {
     }
 
     private fun refresh() {
-        if (!Prefs.silenceLocked(this)) {
+        if (!Prefs.silenceLocked(this) && !Prefs.targetFromStats(this)) {
             Prefs.setTarget(this, computedTargetDb(liveSilenceDb()))
         }
         updaters.forEach { it() }
@@ -353,8 +386,8 @@ private fun maybeBoostVolumeOnLock() {
         val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
 
         val yourVol = if (State.running && State.baseVol >= 0) State.baseVol else vol
-        val ceiling = if (State.running && State.ceiling >= 0) State.ceiling
-            else minOf(kotlin.math.floor(maxVol * Prefs.maxPct(this) / 100.0).toInt(), vol + Prefs.boost(this))
+        // Max volume defaults to your own baseline - the app never raises above it.
+        val ceiling = if (State.running && State.ceiling >= 0) State.ceiling else vol
         topView.text = "Your volume: $yourVol/$maxVol\nCeiling volume: $ceiling/$maxVol\nRoom loudness: $level"
 
         val saved = Prefs.mic(this)
@@ -366,6 +399,7 @@ private fun maybeBoostVolumeOnLock() {
         statusView.text = "Status: ${State.status}\nMic in use: ${State.micName}" +
             "\nMic: $micLabel \nLive overlay: $overlayLabel"
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
+        overlayBtn.text = if (Prefs.overlayOn(this)) "Disable overlay" else "Enable overlay"
     }
 
     private fun cycleMic() {
