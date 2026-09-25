@@ -163,8 +163,7 @@ class MainActivity : Activity() {
                 "always goes back to the default formula.\n\n" +
                 "If the HVAC kicks on mid-movie and the audio gets too quiet, reopen Volume " +
                 "Leveler from your TV inputs and press Set on Silence floor again to " +
-                "recalibrate, then go back. If the room's Loudness is set at ≥20, the set " +
-                "volume will automatically be increased by 5.", 16f
+                "recalibrate, then go back.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
         // ---- Full-width row: 34% instructions | 66% controls ----
@@ -212,43 +211,7 @@ class MainActivity : Activity() {
         Prefs.setSilenceLocked(this, true)
         Prefs.setTargetFromStats(this, false)
         syncTargetFromSilence()
-        maybeBoostVolumeOnLock()
     }
-    
-/** If silence floor ≥ 20%, try to raise volume by exactly 5. 
- *  Best-performing method on this TV: absolute set + single gentle correction. */
-private fun maybeBoostVolumeOnLock() {
-    if (pct(Prefs.silence(this)) < 20) return
-
-    val am = getSystemService(AudioManager::class.java)
-    val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-    val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val targetVol = (current + 4).coerceAtMost(maxVol)
-    if (targetVol <= current) return
-
-    // 1. Try to snap
-    am.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
-
-    // 2. One correction pass after the TV/receiver has had time to settle
-    handler.postDelayed({
-        val now = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (now == targetVol) return@postDelayed
-
-        val diff = targetVol - now
-        // Limit correction so we don’t overshoot badly
-        val steps = kotlin.math.abs(diff).coerceAtMost(4)
-        val direction = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-
-        fun correct(remaining: Int) {
-            if (remaining <= 0) return
-            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            if (cur == targetVol) return          // already there – stop early
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
-            handler.postDelayed({ correct(remaining - 1) }, 200)
-        }
-        correct(steps)
-    }, 450)
-}
 
     private fun syncTargetFromSilence() {
         Prefs.setTarget(this, computedTargetDb(Prefs.silence(this)))

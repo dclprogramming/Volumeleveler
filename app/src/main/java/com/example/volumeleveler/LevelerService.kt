@@ -321,9 +321,9 @@ class LevelerService : Service() {
                     // ground the app itself cut - it can't overshoot past where you set it.
                     avg < target - tol && now - lastAdjust >= RAISE_COOLDOWN &&
                         am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol -> {
-                        // The quieter the scene, the more levels it gets back (1-3).
+                        // The quieter the scene, the more levels it gets back (1-2).
                         val quietBy = (target - tol) - avg
-                        val levels = if (quietBy >= 8f) 3 else if (quietBy >= 4f) 2 else 1
+                        val levels = if (quietBy >= 6f) 2 else 1
                         val moved = step(+1, levels)
                         avg += moved * DB_PER_LEVEL
                         slow += moved * DB_PER_LEVEL
@@ -420,10 +420,10 @@ class LevelerService : Service() {
         private const val CHANNEL = "leveler"
         private const val NOTIFY_MS = 2000L
         private const val MIN_PCT = 30             // hardwired minimum volume
-        private const val LOWER_MIN_LEVELS = 3
+        private const val LOWER_MIN_LEVELS = 1
         private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
-        private const val LOWER_MAX_LEVELS = 5
-        private const val MAX_DROP_LEVELS = 4      // most levels cut within one window (~4-5 dB)
+        private const val LOWER_MAX_LEVELS = 3
+        private const val MAX_DROP_LEVELS = 3      // most levels cut within one window
         private const val DROP_WINDOW_MS = 2500L
         private const val SLOW_ATTACK = 0.20f      // per 50 ms chunk (~0.25 s) - faster reaction
         private const val SLOW_RELEASE = 0.03f
