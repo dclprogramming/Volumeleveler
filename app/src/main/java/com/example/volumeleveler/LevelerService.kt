@@ -103,22 +103,32 @@ class LevelerService : Service() {
         if (baseVol >= 0 && !am.isVolumeFixed) {
     val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
     val trueBase = (baseVol - hvacBoostDelta).coerceIn(0, maxVol)
+    val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-    // One relative step at a time, re-reading actual volume every iteration.
-    // Stops the moment we hit the target — no big pre-computed burst, no overshoot.
-    // Fully compatible with CEC/ARC / every TV that accepts volume-key style adjusts.
-    var safety = maxVol + 2
-    while (safety-- > 0) {
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (cur == trueBase) break
+    if (cur != trueBase) {
+        // 1. Try the clean absolute set (one shot, no jumping)
+        am.setStreamVolume(AudioManager.STREAM_MUSIC, trueBase, 0)
 
-        val dir = if (cur < trueBase)
-            AudioManager.ADJUST_RAISE
-        else
-            AudioManager.ADJUST_LOWER
+        // 2. Verify it actually worked
+        Thread.sleep(100)   // brief moment for the change to register
+        val after = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-        Thread.sleep(200)   // 60–100 ms is the usual sweet spot; adjust if needed
+        if (after != trueBase) {
+            // 3. Fall back to relative only if absolute was ignored
+            var safety = maxVol + 2
+            while (safety-- > 0) {
+                val now = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (now == trueBase) break
+
+                val dir = if (now < trueBase)
+                    AudioManager.ADJUST_RAISE
+                else
+                    AudioManager.ADJUST_LOWER
+
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+                Thread.sleep(200)
+            }
+        }
     }
 }
                 
