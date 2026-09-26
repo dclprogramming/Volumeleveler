@@ -98,32 +98,19 @@ class LevelerService : Service() {
         // next session). Paced with a short delay between each command, since a tight
         // unpaced burst of HDMI-CEC/ARC commands is what caused the earlier overshoot
         // bugs - step() avoids this by being naturally paced by the capture loop, which
-        // this restore, running
-
-        // 1. Kill any chance of the old boost being re-applied
-// Undo the HVAC boost by lowering both the ceiling and the actual volume by 4
-if (baseVol >= 0 && !am.isVolumeFixed && hvacBoostDelta != 0) {
-    val stepsToUndo = hvacBoostDelta   // normally 4 (or less if it was clamped)
-
-    // 1. Lower the ceiling first so any late step() cannot raise back up
-    baseVol = (baseVol - stepsToUndo).coerceAtLeast(0)
-    hvacBoosted = false
-    hvacBoostDelta = 0
-
-    // 2. Now lower the real volume to match the new baseline
-    var stepsLeft = stepsToUndo
-    var safety = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) + 2
-
-    while (stepsLeft > 0 && safety-- > 0) {
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (cur <= 0) break
-
-        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0)
-        stepsLeft--
-        Thread.sleep(150)
-    }
-}
-                
+        // this restore, running once at shutdown, is not.
+        if (baseVol >= 0 && !am.isVolumeFixed) {
+            val trueBase = baseVol - hvacBoostDelta
+            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val diff = trueBase - cur
+            if (diff != 0) {
+                val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+                repeat(kotlin.math.abs(diff)) {
+                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+                    
+                }
+            }
+        }
         State.running = false
         State.status = "Stopped"
         // (Room loudness is left as-is; LevelPreview picks up mic listening again.)
