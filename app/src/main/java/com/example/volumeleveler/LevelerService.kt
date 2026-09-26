@@ -220,11 +220,13 @@ class LevelerService : Service() {
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val loud = if (State.levelDb.isNaN()) "-" else "${(State.levelDb + 100f).coerceIn(0f, 100f).toInt()}%"
+        val loudOverlay = if (State.levelDb.isNaN()) "-"
+            else "%02d%%".format((State.levelDb + 100f).coerceIn(0f, 100f).toInt())
         val tgt = "${(Prefs.target(this) + 100f).coerceIn(0f, 100f).toInt()}%"
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loudness $loud  Target $tgt  Vol $cur/$maxVol", hvacBoosted)
+        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur/$maxVol", hvacBoosted)
     }
 
     // ---- capture + leveling ----
@@ -443,7 +445,6 @@ class LevelerService : Service() {
         }
         knownVol = cur
         State.baseVol = baseVol
-        State.ceiling = ceilingLevels()
     }
 
     // ---- Bluetooth mic routing (best effort) ----

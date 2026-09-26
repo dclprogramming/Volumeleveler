@@ -43,13 +43,13 @@ class MainActivity : Activity() {
     /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
     private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
 
-    private val PCT_COLOR = Color.parseColor("#00BFFF")
+    private val ACCENT_COLOR = Color.parseColor("#00BFFF")
 
-    /** Colors every "<number>%" occurrence in s light blue, leaving the rest as-is. */
-    private fun withPctColor(s: String): CharSequence {
+    /** Colors every "<number>%" and "<number>/<number>" occurrence in s light blue. */
+    private fun withAccentColor(s: String): CharSequence {
         val sb = SpannableStringBuilder(s)
-        Regex("-?\\d+%").findAll(s).forEach { m ->
-            sb.setSpan(ForegroundColorSpan(PCT_COLOR), m.range.first, m.range.last + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        Regex("-?\\d+%|\\d+/\\d+").findAll(s).forEach { m ->
+            sb.setSpan(ForegroundColorSpan(ACCENT_COLOR), m.range.first, m.range.last + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         return sb
     }
@@ -279,7 +279,7 @@ class MainActivity : Activity() {
         val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { change(-1) } }
         val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { change(+1) } }
         row.addView(tv); row.addView(minus); row.addView(plus)
-        updaters.add { tv.text = withPctColor(label()) }
+        updaters.add { tv.text = withAccentColor(label()) }
         return row
     }
 
@@ -310,7 +310,7 @@ class MainActivity : Activity() {
         row.addView(tv); row.addView(set); row.addView(reset)
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
-            tv.text = withPctColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
+            tv.text = withAccentColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
         }
         return row
     }
@@ -334,7 +334,7 @@ class MainActivity : Activity() {
         val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { onAdjust(-1); reload(); refresh() } }
         val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { onAdjust(+1); reload(); refresh() } }
         row.addView(tv); row.addView(set); row.addView(minus); row.addView(plus)
-        updaters.add { tv.text = withPctColor("$title: ${display()}") }
+        updaters.add { tv.text = withAccentColor("$title: ${display()}") }
         captureButtons?.invoke(listOf(set, minus, plus))
         return row
     }
@@ -371,9 +371,7 @@ class MainActivity : Activity() {
         val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
 
         val yourVol = if (State.running && State.baseVol >= 0) State.baseVol else vol
-        // Max volume defaults to your own baseline - the app never raises above it.
-        val ceiling = if (State.running && State.ceiling >= 0) State.ceiling else vol
-        topView.text = withPctColor("Your volume: $yourVol/$maxVol\nCeiling volume: $ceiling/$maxVol\nRoom loudness: $level")
+        topView.text = withAccentColor("Your volume: $yourVol/$maxVol\nRoom loudness: $level")
 
         val saved = Prefs.mic(this)
         val micLabel = if (saved.isEmpty()) "Auto"

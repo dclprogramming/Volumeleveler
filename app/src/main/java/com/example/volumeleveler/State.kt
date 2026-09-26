@@ -6,9 +6,8 @@ object State {
     @Volatile var status = "Stopped"
     @Volatile var micName = "-"
     @Volatile var levelDb = Float.NaN
-    /** Shown on screen: the volume the user set, and the highest the app may raise to. */
+    /** Shown on screen: the volume the user set. */
     @Volatile var baseVol = -1
-    @Volatile var ceiling = -1
 
     /** Loudness Statistics: High/Low/Avg dBFS gathered starting 3 minutes into a Start
      *  leveling session, until Stop leveling. Persists across sessions until Reset. */
