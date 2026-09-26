@@ -101,17 +101,26 @@ class LevelerService : Service() {
         // this restore, running
 
         if (baseVol >= 0 && !am.isVolumeFixed) {
-    val trueBase = baseVol - hvacBoostDelta
-    val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val diff = trueBase - cur
-    if (diff != 0) {
-        val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        repeat(kotlin.math.abs(diff)) {
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-            
-        }
+    val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val trueBase = (baseVol - hvacBoostDelta).coerceIn(0, maxVol)
+
+    // One relative step at a time, re-reading actual volume every iteration.
+    // Stops the moment we hit the target — no big pre-computed burst, no overshoot.
+    // Fully compatible with CEC/ARC / every TV that accepts volume-key style adjusts.
+    var safety = maxVol + 2
+    while (safety-- > 0) {
+        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (cur == trueBase) break
+
+        val dir = if (cur < trueBase)
+            AudioManager.ADJUST_RAISE
+        else
+            AudioManager.ADJUST_LOWER
+
+        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+        Thread.sleep(100)   // 60–100 ms is the usual sweet spot; adjust if needed
     }
-        }
+}
                 
         State.running = false
         State.status = "Stopped"
