@@ -16,6 +16,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -39,6 +42,23 @@ class MainActivity : Activity() {
 
     /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
     private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
+
+    private val PCT_COLOR = Color.parseColor("#00BFFF")
+
+    /** Colors every "<number>%" occurrence in s light blue, leaving the rest as-is. */
+    private fun withPctColor(s: String): CharSequence {
+        val sb = SpannableStringBuilder(s)
+        Regex("-?\\d+%").findAll(s).forEach { m ->
+            sb.setSpan(ForegroundColorSpan(PCT_COLOR), m.range.first, m.range.last + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return sb
+    }
+
+    private fun statusColor(status: String): Int? = when (status) {
+        "Stopped" -> Color.parseColor("#FF0000")
+        "Listening" -> Color.parseColor("#00BFFF")
+        else -> null
+    }
 
     /** dBFS-equivalent silence floor if locked right now: current room loudness + 3%. */
     private fun liveSilenceDb(): Float = if (State.levelDb.isNaN()) -65f else State.levelDb + 3f
@@ -111,10 +131,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        topView = text("", 18f).apply { setPadding(0, dp(8), 0, dp(4)) }
-        readouts.addView(topView)
-        statusView = text("", 16f).apply { setPadding(0, dp(4), 0, dp(16)) }
+        statusView = text("", 16f).apply { setPadding(0, dp(8), 0, dp(4)) }
         readouts.addView(statusView)
+        topView = text("", 18f).apply { setPadding(0, dp(4), 0, dp(16)) }
+        readouts.addView(topView)
         topRow.addView(readouts)
         topRow.addView(actionButtons)
         right.addView(topRow)
@@ -257,7 +277,7 @@ class MainActivity : Activity() {
         val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { change(-1) } }
         val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { change(+1) } }
         row.addView(tv); row.addView(minus); row.addView(plus)
-        updaters.add { tv.text = label() }
+        updaters.add { tv.text = withPctColor(label()) }
         return row
     }
 
@@ -288,7 +308,7 @@ class MainActivity : Activity() {
         row.addView(tv); row.addView(set); row.addView(reset)
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
-            tv.text = "Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}"
+            tv.text = withPctColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
         }
         return row
     }
@@ -312,7 +332,7 @@ class MainActivity : Activity() {
         val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { onAdjust(-1); reload(); refresh() } }
         val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { onAdjust(+1); reload(); refresh() } }
         row.addView(tv); row.addView(set); row.addView(minus); row.addView(plus)
-        updaters.add { tv.text = "$title: ${display()}" }
+        updaters.add { tv.text = withPctColor("$title: ${display()}") }
         captureButtons?.invoke(listOf(set, minus, plus))
         return row
     }
@@ -351,7 +371,7 @@ class MainActivity : Activity() {
         val yourVol = if (State.running && State.baseVol >= 0) State.baseVol else vol
         // Max volume defaults to your own baseline - the app never raises above it.
         val ceiling = if (State.running && State.ceiling >= 0) State.ceiling else vol
-        topView.text = "Your volume: $yourVol/$maxVol\nCeiling volume: $ceiling/$maxVol\nRoom loudness: $level"
+        topView.text = withPctColor("Your volume: $yourVol/$maxVol\nCeiling volume: $ceiling/$maxVol\nRoom loudness: $level")
 
         val saved = Prefs.mic(this)
         val micLabel = if (saved.isEmpty()) "Auto"
@@ -359,8 +379,14 @@ class MainActivity : Activity() {
             ?.let { MicSelector.label(it) } ?: "Auto (chosen mic not connected)"
         val overlayLabel = if (Prefs.overlayOn(this)) "Enabled" else "Disabled"
 
-        statusView.text = "Status: ${State.status}\nMic in use: ${State.micName}" +
-            "\nMic: $micLabel \nLive overlay: $overlayLabel"
+        val statusText = SpannableStringBuilder("Status: ")
+        val statusStart = statusText.length
+        statusText.append(State.status)
+        statusColor(State.status)?.let {
+            statusText.setSpan(ForegroundColorSpan(it), statusStart, statusText.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        statusText.append("\nMic in use: ${State.micName}\nMic: $micLabel \nLive overlay: $overlayLabel")
+        statusView.text = statusText
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
         overlayBtn.text = if (Prefs.overlayOn(this)) "Disable overlay" else "Enable overlay"
     }

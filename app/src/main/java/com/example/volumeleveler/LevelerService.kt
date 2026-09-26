@@ -116,7 +116,7 @@ class LevelerService : Service() {
             try {
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                 val tv = TextView(this).apply {
-                    setTextColor(android.graphics.Color.WHITE)
+                    setTextColor(android.graphics.Color.parseColor("#00BFFF"))
                     setBackgroundColor(android.graphics.Color.parseColor("#000000"))
                     setPadding(18, 10, 18, 10)
                     textSize = 13f
