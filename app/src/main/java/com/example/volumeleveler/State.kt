@@ -8,6 +8,8 @@ object State {
     @Volatile var levelDb = Float.NaN
     /** Shown on screen: the volume the user set. */
     @Volatile var baseVol = -1
+    /** Whether the auto HVAC boost is currently active - drives Your volume's color. */
+    @Volatile var hvacBoosted = false
 
     /** Loudness Statistics: High/Low/Avg dBFS gathered starting 3 minutes into a Start
      *  leveling session, until Stop leveling. Persists across sessions until Reset. */

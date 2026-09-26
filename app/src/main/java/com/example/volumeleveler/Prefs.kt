@@ -9,17 +9,11 @@ object Prefs {
     fun mic(c: Context): String = sp(c).getString("mic", "") ?: ""
     fun setMic(c: Context, v: String) = sp(c).edit().putString("mic", v).apply()
 
-    /** Target room level in dBFS (uncalibrated, relative). Shown/edited as a 0-100 percent.
-     *  Derived from the silence floor via a formula, or from Loudness Statistics if the
-     *  user pressed Set there; kept in sync automatically either way. */
-    fun target(c: Context): Float = sp(c).getFloat("target", -55f)
+    /** Target room level in dBFS (uncalibrated, relative). Shown/edited as a 0-100
+     *  percent. Defaults to 26%; only ever changed after that via the Loudness
+     *  Statistics Set button (locks it to the measured average). */
+    fun target(c: Context): Float = sp(c).getFloat("target", -74f)
     fun setTarget(c: Context, v: Float) = sp(c).edit().putFloat("target", v.coerceIn(-80f, -5f)).apply()
-
-    /** Whether the Loudness target is currently locked to the Loudness Statistics
-     *  average (via its Set button) rather than the silence-floor formula. Clearing
-     *  this (via Set on Silence floor) returns to the default formula. */
-    fun targetFromStats(c: Context): Boolean = sp(c).getBoolean("targetFromStats", false)
-    fun setTargetFromStats(c: Context, v: Boolean) = sp(c).edit().putBoolean("targetFromStats", v).apply()
 
     /** Dead-band in dB around the target where the volume is left alone. Hardwired to 1%. */
     fun tolerance(c: Context): Float = 1f

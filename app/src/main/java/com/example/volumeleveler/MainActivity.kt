@@ -46,7 +46,7 @@ class MainActivity : Activity() {
     private val ACCENT_COLOR = Color.parseColor("#00BFFF")
 
     /** Colors every "<number>%" and "<number>/<number>" occurrence in s light blue. */
-    private fun withAccentColor(s: String): CharSequence {
+    private fun withAccentColor(s: String): SpannableStringBuilder {
         val sb = SpannableStringBuilder(s)
         Regex("-?\\d+%|\\d+/\\d+").findAll(s).forEach { m ->
             sb.setSpan(ForegroundColorSpan(ACCENT_COLOR), m.range.first, m.range.last + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -62,14 +62,6 @@ class MainActivity : Activity() {
 
     /** dBFS-equivalent silence floor if locked right now: current room loudness + 3%. */
     private fun liveSilenceDb(): Float = if (State.levelDb.isNaN()) -65f else State.levelDb + 3f
-
-    /** Loudness target, derived from the silence floor (not from volume): a gentle
-     *  offset above it, clamped to a sane range. */
-    private fun computedTargetDb(silenceDbfs: Float): Float {
-        val silencePct = pct(silenceDbfs).toFloat()
-        val targetPct = (0.6f * silencePct + 18.2f).coerceIn(18f, 45f)
-        return targetPct - 100f
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -139,29 +131,22 @@ class MainActivity : Activity() {
         topRow.addView(actionButtons)
         right.addView(topRow)
 
+        right.addView(infoRow { "Loudness target: ${pct(Prefs.target(this))}%" })
+
         val silenceRowButtons = mutableListOf<Button>()
         right.addView(lockableRow(
             title = "Silence floor",
             display = {
-                if (Prefs.silenceLocked(this)) {
-                    val now = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
-                    "${pct(Prefs.silence(this))}% (set)   now: $now"
-                } else "${pct(liveSilenceDb())}% (auto)"
+                if (Prefs.silenceLocked(this)) "${pct(Prefs.silence(this))}% (set)"
+                else "${pct(liveSilenceDb())}% (auto)"
             },
             onSet = { lockSilence(liveSilenceDb()) },
             onAdjust = { d ->
                 if (!Prefs.silenceLocked(this)) lockSilence(liveSilenceDb())
                 Prefs.setSilence(this, Prefs.silence(this) + d)
-                syncTargetFromSilence()
             },
             captureButtons = { silenceRowButtons.addAll(it) }
         ))
-        right.addView(adjRow({
-            val source = if (Prefs.targetFromStats(this)) "from stats" else "from silence floor"
-            "Loudness target ($source): ${pct(Prefs.target(this))}%"
-        }) { d ->
-            Prefs.setTarget(this, Prefs.target(this) + d)
-        })
         right.addView(statsRow())
 
         // ---- Left column (34%): instructions ----
@@ -173,14 +158,15 @@ class MainActivity : Activity() {
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
                 "2. Press Set on Silence floor to capture the current room's Loudness level " +
-                "(the app adds a +3% buffer) — this also sets your Loudness target automatically.\n\n" +
+                "(the app adds a +3% buffer). This is separate from Loudness target, which " +
+                "defaults to 26% and doesn't need to be touched.\n\n" +
                 "3. Press Start leveling, then start your movie. Max volume defaults to the " +
                 "volume you set in step 1 — the app never raises above it.\n\n" +
                 "4. About 3 minutes into playback, Loudness Statistics starts gathering " +
-                "High/Low/Avg readings until you press Stop leveling. Press Set next to it to " +
-                "lock your Loudness target to the measured average instead of the silence-floor " +
-                "formula, or Reset to clear the gathered numbers. Pressing Set on Silence floor " +
-                "always goes back to the default formula.\n\n" +
+                "High/Low/Avg readings until you press Stop leveling. If the default 26% " +
+                "target isn't matching your content well, press Set next to it to lock the " +
+                "Loudness target to the measured average instead, or Reset to clear the " +
+                "gathered numbers.\n\n" +
                 "If sustained background noise (like HVAC) pushes the room's loudness to " +
                 "20% or more for a full minute, the app automatically raises the volume by " +
                 "4 to compensate, then automatically removes that boost again once the " +
@@ -231,12 +217,6 @@ class MainActivity : Activity() {
     private fun lockSilence(liveDb: Float) {
         Prefs.setSilence(this, liveDb)
         Prefs.setSilenceLocked(this, true)
-        Prefs.setTargetFromStats(this, false)
-        syncTargetFromSilence()
-    }
-
-    private fun syncTargetFromSilence() {
-        Prefs.setTarget(this, computedTargetDb(Prefs.silence(this)))
     }
 
     override fun onResume() {
@@ -267,20 +247,12 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
     }
 
-    private fun adjRow(label: () -> String, onChange: (Int) -> Unit): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val tv = text("", 16f).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        fun change(d: Int) { onChange(d); reload(); refresh() }
-        val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { change(-1) } }
-        val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { change(+1) } }
-        row.addView(tv); row.addView(minus); row.addView(plus)
+    /** Plain read-only row: "label", no buttons - used for Loudness target, which is
+     *  now only ever changed via the Loudness Statistics Set button. */
+    private fun infoRow(label: () -> String): TextView {
+        val tv = text("", 16f)
         updaters.add { tv.text = withAccentColor(label()) }
-        return row
+        return tv
     }
 
     /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Set (locks the Loudness target
@@ -361,9 +333,6 @@ class MainActivity : Activity() {
     }
 
     private fun refresh() {
-        if (!Prefs.silenceLocked(this) && !Prefs.targetFromStats(this)) {
-            Prefs.setTarget(this, computedTargetDb(liveSilenceDb()))
-        }
         updaters.forEach { it() }
         val am = getSystemService(AudioManager::class.java)
         val vol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -371,7 +340,19 @@ class MainActivity : Activity() {
         val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
 
         val yourVol = if (State.running && State.baseVol >= 0) State.baseVol else vol
-        topView.text = withAccentColor("Your volume: $yourVol/$maxVol\nRoom loudness: $level")
+        val yourVolText = "$yourVol/$maxVol"
+        val topText = "Your volume: $yourVolText\nRoom loudness: $level"
+        val topSb = withAccentColor(topText)
+        if (State.hvacBoosted) {
+            val idx = topText.indexOf(yourVolText)
+            if (idx >= 0) {
+                topSb.setSpan(
+                    ForegroundColorSpan(Color.parseColor("#32CD32")),
+                    idx, idx + yourVolText.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+        }
+        topView.text = topSb
 
         val saved = Prefs.mic(this)
         val micLabel = if (saved.isEmpty()) "Auto"

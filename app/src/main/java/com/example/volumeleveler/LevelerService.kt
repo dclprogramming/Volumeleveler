@@ -74,6 +74,7 @@ class LevelerService : Service() {
             knownVol = baseVol
             levelingStartElapsed = SystemClock.elapsedRealtime()
             hvacBoosted = false
+            State.hvacBoosted = false
             hvacAboveSince = 0L
             hvacBoostDelta = 0
         }
@@ -88,6 +89,7 @@ class LevelerService : Service() {
         worker?.join(1500)
         if (registered) am.unregisterAudioDeviceCallback(deviceCb)
         registered = false
+        State.hvacBoosted = false
         disableSco()
         removeOverlay()
         // Put the system volume back where it was when leveling started, undoing any
@@ -95,10 +97,7 @@ class LevelerService : Service() {
         // (if HVAC never dropped back below 15% before you hit Stop, hvacBoostDelta is
         // still nonzero - restoring to raw baseVol would lock the boosted number in as
         // if it were your real baseline, causing a second boost to stack on top of it
-        // next session). Paced with a short delay between each command, since a tight
-        // unpaced burst of HDMI-CEC/ARC commands is what caused the earlier overshoot
-        // bugs - step() avoids this by being naturally paced by the capture loop, which
-        // this restore, running once at shutdown, is not.
+        // next session).
         if (baseVol >= 0 && !am.isVolumeFixed) {
             val trueBase = baseVol - hvacBoostDelta
             val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -107,7 +106,6 @@ class LevelerService : Service() {
                 val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
                 repeat(kotlin.math.abs(diff)) {
                     am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-                    
                 }
             }
         }
@@ -315,12 +313,14 @@ class LevelerService : Service() {
                         if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
                             applyHvacBoost(raise = true)
                             hvacBoosted = true
+                            State.hvacBoosted = true
                         }
                     } else {
                         hvacAboveSince = 0L
                         if (hvacBoosted && avg < HVAC_OFF_DBFS) {
                             applyHvacBoost(raise = false)
                             hvacBoosted = false
+                            State.hvacBoosted = false
                         }
                     }
                 } catch (e: Exception) {
