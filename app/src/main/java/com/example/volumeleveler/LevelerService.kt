@@ -43,6 +43,7 @@ class LevelerService : Service() {
     @Volatile private var levelingStartElapsed = 0L
     @Volatile private var hvacBoosted = false
     private var hvacAboveSince = 0L
+    @Volatile private var hvacBoostDelta = 0
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
@@ -74,6 +75,7 @@ class LevelerService : Service() {
             levelingStartElapsed = SystemClock.elapsedRealtime()
             hvacBoosted = false
             hvacAboveSince = 0L
+            hvacBoostDelta = 0
         }
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
@@ -89,21 +91,23 @@ class LevelerService : Service() {
         disableSco()
         removeOverlay()
         // Put the system volume back where it was when leveling started, undoing any
-        // dynamic raise/lower drift from this session. Without this, "Your volume"
-        // shows wherever leveling happened to leave it, and a later Start leveling
-        // would wrongly capture that drifted level as the new baseline instead of
-        // your actual intended baseline. Step incrementally via adjustStreamVolume,
-        // same as the rest of the app, since that's what HDMI-CEC/ARC output needs.
+        // dynamic raise/lower drift from this session AND any still-active HVAC boost
+        // (if HVAC never dropped back below 15% before you hit Stop, hvacBoostDelta is
+        // still nonzero - restoring to raw baseVol would lock the boosted number in as
+        // if it were your real baseline, causing a second boost to stack on top of it
+        // next session). Paced with a short delay between each command, since a tight
+        // unpaced burst of HDMI-CEC/ARC commands is what caused the earlier overshoot
+        // bugs - step() avoids this by being naturally paced by the capture loop, which
+        // this restore, running once at shutdown, is not.
         if (baseVol >= 0 && !am.isVolumeFixed) {
+            val trueBase = baseVol - hvacBoostDelta
             val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val diff = baseVol - cur
+            val diff = trueBase - cur
             if (diff != 0) {
+                val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
                 repeat(kotlin.math.abs(diff)) {
-                    am.adjustStreamVolume(
-                        AudioManager.STREAM_MUSIC,
-                        if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-                        0
-                    )
+                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+                    Thread.sleep(120)
                 }
             }
         }
@@ -302,19 +306,25 @@ class LevelerService : Service() {
                 // like HVAC came on, so nudge the baseline up by 4 to compensate.
                 // Dropping below 15% at all (no sustain needed) suggests it went back
                 // off, so reverse it. Each direction only fires once until the other
-                // direction fires - hvacBoosted gates that.
-                if (avg >= HVAC_ON_DBFS) {
-                    if (hvacAboveSince == 0L) hvacAboveSince = now
-                    if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
-                        applyHvacBoost(raise = true)
-                        hvacBoosted = true
+                // direction fires - hvacBoosted gates that. Wrapped in try/catch since
+                // an uncaught exception here would silently kill this whole thread,
+                // taking Loudness Statistics (and everything else) down with it.
+                try {
+                    if (avg >= HVAC_ON_DBFS) {
+                        if (hvacAboveSince == 0L) hvacAboveSince = now
+                        if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
+                            applyHvacBoost(raise = true)
+                            hvacBoosted = true
+                        }
+                    } else {
+                        hvacAboveSince = 0L
+                        if (hvacBoosted && avg < HVAC_OFF_DBFS) {
+                            applyHvacBoost(raise = false)
+                            hvacBoosted = false
+                        }
                     }
-                } else {
-                    hvacAboveSince = 0L
-                    if (hvacBoosted && avg < HVAC_OFF_DBFS) {
-                        applyHvacBoost(raise = false)
-                        hvacBoosted = false
-                    }
+                } catch (e: Exception) {
+                    State.status = "HVAC boost error: ${e.javaClass.simpleName}"
                 }
 
                 val silent = db < -85f
@@ -376,20 +386,25 @@ class LevelerService : Service() {
     /** Highest volume level the app may raise to: your own baseline, never above it. */
     private fun ceilingLevels(): Int = baseVol
 
-    /** Raises or lowers the actual volume by up to HVAC_BOOST_LEVELS (clamped to the
-     *  device's min/max), and moves baseVol by that same real amount, so the ceiling
-     *  never falls behind - and so reversing it later exactly undoes it. */
+    /** Raises or lowers the actual volume (clamped to the device's min/max), and moves
+     *  baseVol by that same real amount, so the ceiling never falls behind - and so
+     *  reversing it later exactly undoes it, even if the original boost got clamped
+     *  short (e.g. near the device's max volume). Unboosting reverses the EXACT
+     *  amount recorded in hvacBoostDelta, rather than independently recomputing a
+     *  fresh delta, so baseVol always returns to precisely its pre-boost value. */
     private fun applyHvacBoost(raise: Boolean) {
         if (am.isVolumeFixed) return
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val target = if (raise) (cur + HVAC_BOOST_LEVELS).coerceAtMost(maxVol)
-                     else (cur - HVAC_BOOST_LEVELS).coerceAtLeast(0)
+        val delta = if (raise) (cur + HVAC_BOOST_LEVELS).coerceAtMost(maxVol) - cur else -hvacBoostDelta
+        if (delta == 0) { hvacBoostDelta = 0; return }
+        val target = (cur + delta).coerceIn(0, maxVol)
         val steps = target - cur
-        if (steps == 0) return
+        if (steps == 0) { hvacBoostDelta = 0; return }
         val dir = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
         repeat(kotlin.math.abs(steps)) { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0) }
         baseVol += steps
+        hvacBoostDelta = if (raise) steps else 0
     }
 
     private fun step(dir: Int, count: Int): Int {
