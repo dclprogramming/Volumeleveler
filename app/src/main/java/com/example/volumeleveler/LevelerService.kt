@@ -101,30 +101,26 @@ class LevelerService : Service() {
         // this restore, running
 
         // 1. Kill any chance of the old boost being re-applied
-val trueBase = if (baseVol >= 0) (baseVol - hvacBoostDelta).coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)) else -1
-hvacBoosted = false
-hvacBoostDelta = 0
-if (trueBase >= 0) baseVol = trueBase          // ceiling is now the real original baseline
+// Undo the HVAC boost by lowering both the ceiling and the actual volume by 4
+if (baseVol >= 0 && !am.isVolumeFixed && hvacBoostDelta != 0) {
+    val stepsToUndo = hvacBoostDelta   // normally 4 (or less if it was clamped)
 
-// 2. Now restore the actual volume to that baseline
-if (trueBase >= 0 && !am.isVolumeFixed) {
-    val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-    if (cur != trueBase) {
-        // Prefer absolute set
-        am.setStreamVolume(AudioManager.STREAM_MUSIC, trueBase, 0)
-        Thread.sleep(100)
+    // 1. Lower the ceiling first so any late step() cannot raise back up
+    baseVol = (baseVol - stepsToUndo).coerceAtLeast(0)
+    hvacBoosted = false
+    hvacBoostDelta = 0
 
-        // Fallback only if absolute was ignored
-        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != trueBase) {
-            var safety = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) + 2
-            while (safety-- > 0) {
-                val now = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                if (now == trueBase) break
-                val dir = if (now < trueBase) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-                Thread.sleep(200)
-            }
-        }
+    // 2. Now lower the real volume to match the new baseline
+    var stepsLeft = stepsToUndo
+    var safety = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) + 2
+
+    while (stepsLeft > 0 && safety-- > 0) {
+        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (cur <= 0) break
+
+        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0)
+        stepsLeft--
+        Thread.sleep(150)
     }
 }
                 
