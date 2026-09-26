@@ -118,7 +118,7 @@ if (baseVol >= 0 && !am.isVolumeFixed) {
             AudioManager.ADJUST_LOWER
 
         am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-        Thread.sleep(80)   // 60–100 ms is the usual sweet spot; adjust if needed
+        Thread.sleep(40)   // 60–100 ms is the usual sweet spot; adjust if needed
     }
 }
                 
