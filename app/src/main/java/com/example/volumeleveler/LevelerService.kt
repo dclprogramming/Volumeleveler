@@ -41,6 +41,8 @@ class LevelerService : Service() {
     // Stop/Start cycle. Manual remote changes while running are NOT applied to this.
     @Volatile private var baseVol = -1
     @Volatile private var levelingStartElapsed = 0L
+    @Volatile private var hvacBoosted = false
+    private var hvacAboveSince = 0L
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
@@ -70,6 +72,8 @@ class LevelerService : Service() {
             baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             knownVol = baseVol
             levelingStartElapsed = SystemClock.elapsedRealtime()
+            hvacBoosted = false
+            hvacAboveSince = 0L
         }
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
@@ -149,8 +153,20 @@ class LevelerService : Service() {
         }
     }
 
-    private fun updateOverlay(text: String) {
-        main.post { overlay?.text = text }
+    private fun updateOverlay(text: String, volBoosted: Boolean) {
+        main.post {
+            val idx = text.indexOf("Vol ")
+            if (volBoosted && idx >= 0) {
+                val sb = android.text.SpannableString(text)
+                sb.setSpan(
+                    android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#32CD32")),
+                    idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                overlay?.text = sb
+            } else {
+                overlay?.text = text
+            }
+        }
     }
 
     // ---- device hot-plug ----
@@ -208,7 +224,7 @@ class LevelerService : Service() {
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loudness $loud  Target $tgt  Vol $cur/$maxVol")
+        updateOverlay("Loudness $loud  Target $tgt  Vol $cur/$maxVol", hvacBoosted)
     }
 
     // ---- capture + leveling ----
@@ -255,7 +271,6 @@ class LevelerService : Service() {
             var dropWindowStart = 0L
             var dropInWindow = 0
             var lastAdjust = 0L
-            var silentSince = 0L
 
             while (gen == generation.get()) {
                 val n = rec.read(buf, 0, buf.size)
@@ -279,17 +294,32 @@ class LevelerService : Service() {
                 val now = SystemClock.elapsedRealtime()
                 syncVolume(now)
                 updateNotification(now)
+
+                // Auto HVAC boost/unboost: sustained elevated background noise (avg
+                // staying >=20% continuously for a full minute) suggests something
+                // like HVAC came on, so nudge the baseline up by 4 to compensate.
+                // Dropping below 15% at all (no sustain needed) suggests it went back
+                // off, so reverse it. Each direction only fires once until the other
+                // direction fires - hvacBoosted gates that.
+                if (avg >= HVAC_ON_DBFS) {
+                    if (hvacAboveSince == 0L) hvacAboveSince = now
+                    if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
+                        applyHvacBoost(raise = true)
+                        hvacBoosted = true
+                    }
+                } else {
+                    hvacAboveSince = 0L
+                    if (hvacBoosted && avg < HVAC_OFF_DBFS) {
+                        applyHvacBoost(raise = false)
+                        hvacBoosted = false
+                    }
+                }
+
                 val silent = db < -85f
 
                 if (silent) {
-                    if (silentSince == 0L) silentSince = now
-                    if (now - silentSince > 10_000) {
-                        State.status = "Mic is silent (may be reserved by assistant/another app)"
-                    }
                     continue
                 }
-                silentSince = 0L
-                if (State.status.startsWith("Mic is silent")) State.status = "Listening"
                 if (now - levelingStartElapsed >= STATS_DELAY_MS) State.recordStat(avg)
 
                 val target = Prefs.target(this)
@@ -343,6 +373,22 @@ class LevelerService : Service() {
 
     /** Highest volume level the app may raise to: your own baseline, never above it. */
     private fun ceilingLevels(): Int = baseVol
+
+    /** Raises or lowers the actual volume by up to HVAC_BOOST_LEVELS (clamped to the
+     *  device's min/max), and moves baseVol by that same real amount, so the ceiling
+     *  never falls behind - and so reversing it later exactly undoes it. */
+    private fun applyHvacBoost(raise: Boolean) {
+        if (am.isVolumeFixed) return
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val target = if (raise) (cur + HVAC_BOOST_LEVELS).coerceAtMost(maxVol)
+                     else (cur - HVAC_BOOST_LEVELS).coerceAtLeast(0)
+        val steps = target - cur
+        if (steps == 0) return
+        val dir = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        repeat(kotlin.math.abs(steps)) { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0) }
+        baseVol += steps
+    }
 
     private fun step(dir: Int, count: Int): Int {
         if (am.isVolumeFixed) {
@@ -442,5 +488,9 @@ class LevelerService : Service() {
         private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
         private const val RAISE_COOLDOWN = 400L
         private const val STATS_DELAY_MS = 180_000L  // Loudness Statistics starts 3 minutes into a session
+        private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
+        private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
+        private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
+        private const val HVAC_BOOST_LEVELS = 4
     }
 }

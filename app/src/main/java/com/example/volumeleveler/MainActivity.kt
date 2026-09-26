@@ -133,7 +133,7 @@ class MainActivity : Activity() {
         }
         statusView = text("", 16f).apply { setPadding(0, dp(8), 0, dp(4)) }
         readouts.addView(statusView)
-        topView = text("", 18f).apply { setPadding(0, dp(4), 0, dp(16)) }
+        topView = text("", 16f).apply { setPadding(0, dp(4), 0, dp(16)) }
         readouts.addView(topView)
         topRow.addView(readouts)
         topRow.addView(actionButtons)
@@ -181,9 +181,11 @@ class MainActivity : Activity() {
                 "lock your Loudness target to the measured average instead of the silence-floor " +
                 "formula, or Reset to clear the gathered numbers. Pressing Set on Silence floor " +
                 "always goes back to the default formula.\n\n" +
-                "If the HVAC kicks on mid-movie and the audio gets too quiet, reopen Volume " +
-                "Leveler from your TV inputs and press Set on Silence floor again to " +
-                "recalibrate, then go back.", 16f
+                "If sustained background noise (like HVAC) pushes the room's loudness to " +
+                "20% or more for a full minute, the app automatically raises the volume by " +
+                "4 to compensate, then automatically removes that boost again once the " +
+                "background noise drops back below 15% — no need to reopen the app or " +
+                "recalibrate.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
         // ---- Full-width row: 34% instructions | 66% controls ----
