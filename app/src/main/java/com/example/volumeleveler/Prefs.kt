@@ -15,6 +15,12 @@ object Prefs {
     fun target(c: Context): Float = sp(c).getFloat("target", -74f)
     fun setTarget(c: Context, v: Float) = sp(c).edit().putFloat("target", v.coerceIn(-80f, -5f)).apply()
 
+     /** Whether the Loudness target is currently locked to the Loudness Statistics
+     *  average (via its Set button) rather than the silence-floor formula. Clearing
+     *  this (via Set on Silence floor) returns to the default formula. */
+    fun targetFromStats(c: Context): Boolean = sp(c).getBoolean("targetFromStats", false)
+    fun setTargetFromStats(c: Context, v: Boolean) = sp(c).edit().putBoolean("targetFromStats", v).apply()
+
     /** Dead-band in dB around the target where the volume is left alone. Hardwired to 1%. */
     fun tolerance(c: Context): Float = 1f
 
