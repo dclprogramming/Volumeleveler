@@ -118,7 +118,7 @@ class LevelerService : Service() {
             AudioManager.ADJUST_LOWER
 
         am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-        Thread.sleep(140)   // 60–100 ms is the usual sweet spot; adjust if needed
+        Thread.sleep(200)   // 60–100 ms is the usual sweet spot; adjust if needed
     }
 }
                 
