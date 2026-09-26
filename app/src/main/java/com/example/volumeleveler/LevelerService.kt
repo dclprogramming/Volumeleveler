@@ -107,7 +107,7 @@ class LevelerService : Service() {
                 val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
                 repeat(kotlin.math.abs(diff)) {
                     am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-                    Thread.sleep(120)
+                    
                 }
             }
         }
