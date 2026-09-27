@@ -278,6 +278,21 @@ class MainActivity : Activity() {
             }
         }
         row.addView(tv); row.addView(followBtn); row.addView(reset)
+        // Both buttons get the same fixed width: wide enough to comfortably fit the
+        // longer "Follow avg: Off" label with padding on either side, so the toggle
+        // never resizes/reflows when it flips between On and Off.
+        val hPad = dp(20)
+        val widest = maxOf(
+            followBtn.paint.measureText("Follow avg: Off"),
+            followBtn.paint.measureText("Follow avg: On")
+        )
+        val statsBtnWidth = widest.toInt() + hPad * 2
+        listOf(followBtn, reset).forEach { b ->
+            b.setPadding(hPad, b.paddingTop, hPad, b.paddingBottom)
+            b.layoutParams = LinearLayout.LayoutParams(statsBtnWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = dp(6)
+            }
+        }
         captureButtons?.invoke(listOf(followBtn, reset))
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
