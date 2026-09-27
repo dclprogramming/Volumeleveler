@@ -134,14 +134,13 @@ class MainActivity : Activity() {
         micBtn = ctrlBtn("Mic selector") { cycleMic() }
         right.addView(pairedRow(micStatusView, micBtn))
 
-        // Grouped together: Room loudness, then Loudness target, then Loudness Statistics.
+        // Room loudness info row
         right.addView(infoRow {
             val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
             "Room loudness: $level"
         })
 
-        // Loudness target row: value + Follow avg toggle. Doesn't resize between
-        // On/Off since its width is the shared btnWidth computed above.
+        // Loudness target row: value + Follow avg toggle wrapped in pairedRow for uniform spacing
         val followBtn = ctrlBtn("Follow avg: Off") {
             Prefs.setFollowAvg(this, !Prefs.followAvg(this))
             reload(); refresh()
@@ -234,24 +233,16 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
     }
 
-    /** Plain read-only row: "label", no buttons - used for Loudness target, which is
-     *  now only ever changed via the Follow avg toggle (or Reset). */
+    /** Plain read-only row: "label", no buttons. */
     private fun infoRow(label: () -> String): TextView {
         val tv = text("", 16f)
         updaters.add { tv.text = withAccentColor(label()) }
         return tv
     }
 
-    /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Reset (clears the gathered
-     *  numbers, returns the Loudness target to 26%, and turns Follow avg off). */
+    /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Reset wrapped in pairedRow for uniform spacing. */
     private fun statsRow(btnWidth: Int): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val tv = text("", 16f).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
+        val tv = text("", 16f)
         val reset = Button(this).apply {
             styleButton(this); text = "Reset"; isAllCaps = false
             setOnClickListener {
@@ -264,12 +255,12 @@ class MainActivity : Activity() {
         val hPad = dp(20)
         reset.setPadding(hPad, reset.paddingTop, hPad, reset.paddingBottom)
         reset.layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
-        row.addView(tv); row.addView(reset)
+        
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
             tv.text = withAccentColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
         }
-        return row
+        return pairedRow(tv, reset)
     }
 
     /** Dark rounded button that gets a white border when focused (remote D-pad). */
