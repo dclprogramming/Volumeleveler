@@ -421,7 +421,8 @@ class LevelerService : Service() {
         if (SystemClock.elapsedRealtime() < settleUntil) return 0
 
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val lo = ceil(maxVol * MIN_PCT / 100.0).toInt()
+        val lo = maxOf(0, baseVol - 8)
+        //val lo = ceil(maxVol * MIN_PCT / 100.0).toInt()
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val hi = ceilingLevels()
 
