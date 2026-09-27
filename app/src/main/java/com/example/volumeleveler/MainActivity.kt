@@ -124,12 +124,6 @@ class MainActivity : Activity() {
         micBtn = ctrlBtn("Mic selector", btnWidth) { cycleMic() }
         right.addView(pairedRow(micStatusView, micBtn))
 
-        // Grouped together: Room loudness, then Loudness target, then Loudness Statistics.
-        right.addView(infoRow {
-            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
-            "Room loudness: $level"
-        })
-
         // Loudness target row: value + Follow avg toggle. Doesn't resize between
         // On/Off since its width is the shared btnWidth computed above.
         val followBtn = ctrlBtn("Follow avg: Off", btnWidth) {
@@ -154,6 +148,12 @@ class MainActivity : Activity() {
             followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
         right.addView(targetRow)
+
+        // Room loudness sits directly under Loudness target (no button of its own).
+        right.addView(infoRow {
+            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
+            "Room loudness: $level"
+        })
 
         right.addView(statsRow(btnWidth))
 
