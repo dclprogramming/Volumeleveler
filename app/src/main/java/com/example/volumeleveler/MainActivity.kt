@@ -124,36 +124,24 @@ class MainActivity : Activity() {
         micBtn = ctrlBtn("Mic selector", btnWidth) { cycleMic() }
         right.addView(pairedRow(micStatusView, micBtn))
 
-        // Loudness target row: value + Follow avg toggle. Doesn't resize between
+        // Room loudness + Loudness target (two lines) lined up with Follow avg. Doesn't resize between
         // On/Off since its width is the shared btnWidth computed above.
         val followBtn = ctrlBtn("Follow avg: Off", btnWidth) {
             Prefs.setFollowAvg(this, !Prefs.followAvg(this))
             reload(); refresh()
         }
-        val targetRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(2), 0, dp(2))
-        }
-        val targetTv = text("", 16f).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        targetRow.addView(targetTv); targetRow.addView(followBtn)
+        val targetTv = text("", 16f)
+        right.addView(pairedRow(targetTv, followBtn))
         updaters.add {
+            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
             val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
             val t = if (followed) State.statsAvg else Prefs.target(this)
             targetTv.text = withAccentColor(
-                "Loudness target: ${pct(t)}%" + if (Prefs.followAvg(this)) " (following avg)" else ""
+                "Room loudness: $level\nLoudness target: ${pct(t)}%" +
+                    if (Prefs.followAvg(this)) " (following avg)" else ""
             )
             followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
-        right.addView(targetRow)
-
-        // Room loudness sits directly under Loudness target (no button of its own).
-        right.addView(infoRow {
-            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
-            "Room loudness: $level"
-        })
 
         right.addView(statsRow(btnWidth))
 
@@ -235,22 +223,13 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
     }
 
-    /** Plain read-only row: "label", no button - used for Room loudness. Tighter dp(2)
-     *  top/bottom padding (shared with targetRow/statsRow) so the loudness group reads
-     *  as one compact block, distinct from the more open dp(6) rhythm of rows 1-3. */
-    private fun infoRow(label: () -> String): TextView {
-        val tv = text("", 16f).apply { setPadding(0, dp(2), 0, dp(2)) }
-        updaters.add { tv.text = withAccentColor(label()) }
-        return tv
-    }
-
     /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Reset (clears the gathered
      *  numbers, returns the Loudness target to 26%, and turns Follow avg off). */
     private fun statsRow(btnWidth: Int): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(2), 0, dp(2))
+            setPadding(0, dp(6), 0, dp(6))
         }
         val tv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
