@@ -24,7 +24,6 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
@@ -470,9 +469,7 @@ class LevelerService : Service() {
         // past even though every individual step() call believes it's respecting them.
         if (SystemClock.elapsedRealtime() < settleUntil) return 0
 
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val lo = maxOf(0, baseVol - 8)
-        //val lo = ceil(maxVol * MIN_PCT / 100.0).toInt()
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val hi = ceilingLevels()
 
@@ -540,7 +537,6 @@ class LevelerService : Service() {
     companion object {
         private const val CHANNEL = "leveler"
         private const val NOTIFY_MS = 2000L
-        private const val MIN_PCT = 30             // hardwired minimum volume
         private const val LOWER_MIN_LEVELS = 1
         private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
         private const val LOWER_MAX_LEVELS = 3

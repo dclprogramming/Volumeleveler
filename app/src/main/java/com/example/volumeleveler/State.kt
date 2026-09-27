@@ -11,8 +11,9 @@ object State {
     /** Whether the auto HVAC boost is currently active - drives Your volume's color. */
     @Volatile var hvacBoosted = false
 
-    /** Loudness Statistics: High/Low/Avg dBFS gathered starting 3 minutes into a Start
-     *  leveling session, until Stop leveling. Persists across sessions until Reset. */
+    /** Loudness Statistics: High/Low/Avg dBFS gathered starting once room loudness has
+     *  hit STATS_START_DBFS (25%) during a Start leveling session, until Stop leveling.
+     *  Persists across sessions until Reset. */
     @Volatile var statsHigh = Float.NaN
     @Volatile var statsLow = Float.NaN
     @Volatile var statsSum = 0.0

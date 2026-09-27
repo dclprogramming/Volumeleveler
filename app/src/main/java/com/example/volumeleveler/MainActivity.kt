@@ -30,8 +30,9 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val updaters = mutableListOf<() -> Unit>()
-    private lateinit var topView: TextView
     private lateinit var statusView: TextView
+    private lateinit var overlayStatusView: TextView
+    private lateinit var micStatusView: TextView
     private lateinit var toggleBtn: Button
     private lateinit var micBtn: Button
     private lateinit var overlayBtn: Button
@@ -66,10 +67,6 @@ class MainActivity : Activity() {
         val screenW = resources.displayMetrics.widthPixels
         val panelBg = Color.parseColor("#101418")
         val rightColW = screenW * 66 / 100
-        // Percentage of the right column's own width, not a fixed dp value, so the
-        // three action buttons stay proportionally sized and everything fits at
-        // 1080p, 1440p, and 4K without any resolution-specific tuning.
-        val actionBtnWidth = (rightColW * 0.55f).toInt()
 
         // ---- Right column (66%): controls ----
         val right = LinearLayout(this).apply {
@@ -80,66 +77,72 @@ class MainActivity : Activity() {
 
         right.addView(text("Volume Leveler", 26f))
 
-        // Start leveling / Live overlay / Mic — stacked, right-locked. Width gets set to
-        // match the combined width of the Loudness Statistics row's buttons once that
-        // row has been laid out (see the post{} block near the end of this function).
-        val actionButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
-            setPadding(0, dp(12), 0, dp(8))
-        }
-        fun actionBtn(): Button = Button(this).apply {
-            styleButton(this)
-            layoutParams = LinearLayout.LayoutParams(actionBtnWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        // Shared width for every button on this screen: wide enough to comfortably fit
+        // the longest label ("Follow avg: Off") with padding, plus 20% so they all read
+        // comfortably from the couch. Computed from text metrics up front, so every
+        // button (Start leveling, overlay, mic, Follow avg, Reset) can use it immediately
+        // with no post-layout measuring pass needed.
+        val hPad = dp(20)
+        val scratchBtn = Button(this).apply { styleButton(this); isAllCaps = false }
+        val btnWidth = ((maxOf(
+            scratchBtn.paint.measureText("Follow avg: Off"),
+            scratchBtn.paint.measureText("Follow avg: On")
+        ).toInt() + hPad * 2) * 1.2f).toInt()
+
+        fun ctrlBtn(label: String, onClick: () -> Unit): Button = Button(this).apply {
+            styleButton(this); isAllCaps = false; text = label
+            setPadding(hPad, paddingTop, hPad, paddingBottom)
+            layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(6)
             }
+            setOnClickListener { onClick() }
         }
-        toggleBtn = actionBtn().apply { text = "Start leveling"; setOnClickListener { toggle() } }
-        actionButtons.addView(toggleBtn)
-        overlayBtn = actionBtn().apply {
-            text = "Enable overlay"
-            setOnClickListener {
-                Prefs.setOverlayOn(this@MainActivity, !Prefs.overlayOn(this@MainActivity))
-                if (Prefs.overlayOn(this@MainActivity) && !Settings.canDrawOverlays(this@MainActivity)) {
-                    Toast.makeText(this@MainActivity,
-                        "Allow \"Display over other apps\" on the next screen, then come back",
-                        Toast.LENGTH_LONG).show()
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                }
-                reload()
-                refresh()
+
+        /** A status text (left, expands) lined up with its button (right, fixed width). */
+        fun pairedRow(tv: TextView, button: Button): LinearLayout {
+            tv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(6), 0, dp(6))
+                addView(tv); addView(button)
             }
         }
-        actionButtons.addView(overlayBtn)
-        micBtn = actionBtn().apply { text = "Mic selector"; setOnClickListener { cycleMic() } }
-        actionButtons.addView(micBtn)
 
-        // Readouts (left) + the 3 action buttons (right), side by side.
-        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val readouts = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        // Row 1: Status + Your volume, lined up with Start/Stop leveling.
+        statusView = text("", 16f)
+        toggleBtn = ctrlBtn("Start leveling") { toggle() }
+        right.addView(pairedRow(statusView, toggleBtn))
+
+        // Row 2: Live overlay, lined up with the overlay toggle.
+        overlayStatusView = text("", 16f)
+        overlayBtn = ctrlBtn("Enable overlay") {
+            Prefs.setOverlayOn(this, !Prefs.overlayOn(this))
+            if (Prefs.overlayOn(this) && !Settings.canDrawOverlays(this)) {
+                Toast.makeText(this,
+                    "Allow \"Display over other apps\" on the next screen, then come back",
+                    Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+            reload()
+            refresh()
         }
-        statusView = text("", 16f).apply { setPadding(0, dp(8), 0, dp(4)) }
-        readouts.addView(statusView)
-        topView = text("", 16f).apply { setPadding(0, dp(4), 0, dp(16)) }
-        readouts.addView(topView)
-        topRow.addView(readouts)
-        topRow.addView(actionButtons)
-        right.addView(topRow)
+        right.addView(pairedRow(overlayStatusView, overlayBtn))
 
-        // Loudness target row: value + Follow avg toggle. The toggle's width is fixed
-        // to comfortably fit the longer "Follow avg: Off" label with padding (so it
-        // doesn't resize between On/Off), and the Reset button below is sized to match.
-        val followBtn = Button(this).apply { styleButton(this); isAllCaps = false }
-        val hPad = dp(20)
-        val ctrlBtnWidth = maxOf(
-            followBtn.paint.measureText("Follow avg: Off"),
-            followBtn.paint.measureText("Follow avg: On")
-        ).toInt() + hPad * 2
-        followBtn.setPadding(hPad, followBtn.paddingTop, hPad, followBtn.paddingBottom)
-        followBtn.layoutParams = LinearLayout.LayoutParams(ctrlBtnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
-        followBtn.setOnClickListener {
+        // Row 3: Mic + Mic in use, lined up with the mic selector.
+        micStatusView = text("", 16f)
+        micBtn = ctrlBtn("Mic selector") { cycleMic() }
+        right.addView(pairedRow(micStatusView, micBtn))
+
+        // Grouped together: Room loudness, then Loudness target, then Loudness Statistics.
+        right.addView(infoRow {
+            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
+            "Room loudness: $level"
+        })
+
+        // Loudness target row: value + Follow avg toggle. Doesn't resize between
+        // On/Off since its width is the shared btnWidth computed above.
+        val followBtn = ctrlBtn("Follow avg: Off") {
             Prefs.setFollowAvg(this, !Prefs.followAvg(this))
             reload(); refresh()
         }
@@ -161,8 +164,7 @@ class MainActivity : Activity() {
         }
         right.addView(targetRow)
 
-        val statsRowButtons = mutableListOf<Button>()
-        right.addView(statsRow(ctrlBtnWidth, captureButtons = { statsRowButtons.addAll(it) }))
+        right.addView(statsRow(btnWidth))
 
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
@@ -212,20 +214,6 @@ class MainActivity : Activity() {
                 Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-
-        // Match the 3 action buttons' width to the Loudness Statistics row's Set/Reset
-        // combined width, once that row has actually been measured (post{} runs after layout).
-        rowContainer.post {
-            val combined = statsRowButtons.sumOf { it.width }
-            if (combined > 0) {
-                listOf(toggleBtn, overlayBtn, micBtn).forEach { b ->
-                    b.layoutParams = LinearLayout.LayoutParams(combined, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                        topMargin = dp(6)
-                    }
-                }
-                actionButtons.requestLayout()
-            }
-        }
     }
 
     override fun onResume() {
@@ -266,7 +254,7 @@ class MainActivity : Activity() {
 
     /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Reset (clears the gathered
      *  numbers, returns the Loudness target to 26%, and turns Follow avg off). */
-    private fun statsRow(btnWidth: Int, captureButtons: ((List<Button>) -> Unit)? = null): LinearLayout {
+    private fun statsRow(btnWidth: Int): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -287,7 +275,6 @@ class MainActivity : Activity() {
         reset.setPadding(hPad, reset.paddingTop, hPad, reset.paddingBottom)
         reset.layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
         row.addView(tv); row.addView(reset)
-        captureButtons?.invoke(listOf(reset))
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
             tv.text = withAccentColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
@@ -321,37 +308,38 @@ class MainActivity : Activity() {
         val am = getSystemService(AudioManager::class.java)
         val vol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
 
+        // Row 1: Status, then Your volume right under it.
         val yourVol = if (State.running && State.baseVol >= 0) State.baseVol else vol
         val yourVolText = "$yourVol/$maxVol"
-        val topText = "Your volume: $yourVolText\nRoom loudness: $level"
-        val topSb = withAccentColor(topText)
+        val statusStr = "Status: ${State.status}\nYour volume: $yourVolText"
+        val statusSb = withAccentColor(statusStr)
+        statusColor(State.status)?.let {
+            val idx = statusStr.indexOf(State.status)
+            if (idx >= 0) statusSb.setSpan(ForegroundColorSpan(it), idx, idx + State.status.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
         if (State.hvacBoosted) {
-            val idx = topText.indexOf(yourVolText)
+            val idx = statusStr.indexOf(yourVolText)
             if (idx >= 0) {
-                topSb.setSpan(
+                statusSb.setSpan(
                     ForegroundColorSpan(Color.parseColor("#32CD32")),
                     idx, idx + yourVolText.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
             }
         }
-        topView.text = topSb
+        statusView.text = statusSb
 
+        // Row 2: Live overlay, lined up with the overlay button.
+        val overlayLabel = if (Prefs.overlayOn(this)) "Enabled" else "Disabled"
+        overlayStatusView.text = withAccentColor("Live overlay: $overlayLabel")
+
+        // Row 3: Mic in use + selected Mic, lined up with the mic selector button.
         val saved = Prefs.mic(this)
         val micLabel = if (saved.isEmpty()) "Auto"
         else MicSelector.list(this).firstOrNull { MicSelector.key(it) == saved }
             ?.let { MicSelector.label(it) } ?: "Auto (chosen mic not connected)"
-        val overlayLabel = if (Prefs.overlayOn(this)) "Enabled" else "Disabled"
+        micStatusView.text = withAccentColor("Mic in use: ${State.micName}\nMic: $micLabel")
 
-        val statusText = SpannableStringBuilder("Status: ")
-        val statusStart = statusText.length
-        statusText.append(State.status)
-        statusColor(State.status)?.let {
-            statusText.setSpan(ForegroundColorSpan(it), statusStart, statusText.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        statusText.append("\nMic in use: ${State.micName}\nMic: $micLabel \nLive overlay: $overlayLabel")
-        statusView.text = statusText
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
         overlayBtn.text = if (Prefs.overlayOn(this)) "Disable overlay" else "Enable overlay"
     }
