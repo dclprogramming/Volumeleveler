@@ -146,14 +146,7 @@ class MainActivity : Activity() {
             Prefs.setFollowAvg(this, !Prefs.followAvg(this))
             reload(); refresh()
         }
-        val targetRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val targetTv = text("", 16f).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        targetRow.addView(targetTv); targetRow.addView(followBtn)
+        val targetTv = text("", 16f)
         updaters.add {
             val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
             val t = if (followed) State.statsAvg else Prefs.target(this)
@@ -162,7 +155,7 @@ class MainActivity : Activity() {
             )
             followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
-        right.addView(targetRow)
+        right.addView(pairedRow(targetTv, followBtn))
 
         right.addView(statsRow(btnWidth))
 
