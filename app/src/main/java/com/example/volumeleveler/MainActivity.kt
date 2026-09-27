@@ -82,21 +82,11 @@ class MainActivity : Activity() {
         // comfortably from the couch. Computed from text metrics up front, so every
         // button (Start leveling, overlay, mic, Follow avg, Reset) can use it immediately
         // with no post-layout measuring pass needed.
-        val hPad = dp(20)
         val scratchBtn = Button(this).apply { styleButton(this); isAllCaps = false }
         val btnWidth = ((maxOf(
             scratchBtn.paint.measureText("Follow avg: Off"),
             scratchBtn.paint.measureText("Follow avg: On")
-        ).toInt() + hPad * 2) * 1.2f).toInt()
-
-        fun ctrlBtn(label: String, onClick: () -> Unit): Button = Button(this).apply {
-            styleButton(this); isAllCaps = false; text = label
-            setPadding(hPad, paddingTop, hPad, paddingBottom)
-            layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(6)
-            }
-            setOnClickListener { onClick() }
-        }
+        ).toInt() + dp(20) * 2) * 1.2f).toInt()
 
         /** A status text (left, expands) lined up with its button (right, fixed width). */
         fun pairedRow(tv: TextView, button: Button): LinearLayout {
@@ -111,12 +101,12 @@ class MainActivity : Activity() {
 
         // Row 1: Status + Your volume, lined up with Start/Stop leveling.
         statusView = text("", 16f)
-        toggleBtn = ctrlBtn("Start leveling") { toggle() }
+        toggleBtn = ctrlBtn("Start leveling", btnWidth) { toggle() }
         right.addView(pairedRow(statusView, toggleBtn))
 
         // Row 2: Live overlay, lined up with the overlay toggle.
         overlayStatusView = text("", 16f)
-        overlayBtn = ctrlBtn("Enable overlay") {
+        overlayBtn = ctrlBtn("Enable overlay", btnWidth) {
             Prefs.setOverlayOn(this, !Prefs.overlayOn(this))
             if (Prefs.overlayOn(this) && !Settings.canDrawOverlays(this)) {
                 Toast.makeText(this,
@@ -131,7 +121,7 @@ class MainActivity : Activity() {
 
         // Row 3: Mic + Mic in use, lined up with the mic selector.
         micStatusView = text("", 16f)
-        micBtn = ctrlBtn("Mic selector") { cycleMic() }
+        micBtn = ctrlBtn("Mic selector", btnWidth) { cycleMic() }
         right.addView(pairedRow(micStatusView, micBtn))
 
         // Grouped together: Room loudness, then Loudness target, then Loudness Statistics.
@@ -142,11 +132,19 @@ class MainActivity : Activity() {
 
         // Loudness target row: value + Follow avg toggle. Doesn't resize between
         // On/Off since its width is the shared btnWidth computed above.
-        val followBtn = ctrlBtn("Follow avg: Off") {
+        val followBtn = ctrlBtn("Follow avg: Off", btnWidth) {
             Prefs.setFollowAvg(this, !Prefs.followAvg(this))
             reload(); refresh()
         }
-        val targetTv = text("", 16f)
+        val targetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val targetTv = text("", 16f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        targetRow.addView(targetTv); targetRow.addView(followBtn)
         updaters.add {
             val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
             val t = if (followed) State.statsAvg else Prefs.target(this)
@@ -155,7 +153,7 @@ class MainActivity : Activity() {
             )
             followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
-        right.addView(pairedRow(targetTv, followBtn))
+        right.addView(targetRow)
 
         right.addView(statsRow(btnWidth))
 
@@ -166,18 +164,21 @@ class MainActivity : Activity() {
             setBackgroundColor(panelBg)
         }
         left.addView(text(
-            "\n1. In a quiet room, manually set your remote volume where you like it. " +
-            "Some movies will have a different comfort zone so you might need to adjust this " +
-                "base volume setting later.\n\n" +
+            "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
                 "2. Press Start leveling, then start your movie. Max volume defaults to " +
-                "the volume you set in step 1.\n\n" +
-                "3. After playing movie for a few minutes you can press Back + Down for 5 " +
-                "seconds to pull up the app and select Follow avg to use a dynamic Loudness " +
-                "target if the avg stat isn't near the default setting of 26%. \n\n" +
-                "4. If the HVAC kicks on and pushes the room's average loudness to " +
-                "20% or more, the app automatically raises the volume by " +
-                "4 to compensate, then automatically removes that boost once the " +
-                "background noise drops back below 15%.", 16f
+                "the volume you set in step 1 — the app never raises above it.\n\n" +
+                "3. Once the room's Loudness reaches 25% during playback, Loudness " +
+                "Statistics starts gathering High/Low/Avg readings until you press Stop " +
+                "leveling. Toggle Follow avg on to have the Loudness target continuously " +
+                "track the measured average instead of staying fixed at 26%; press Reset " +
+                "to clear the gathered numbers, return the target to 26%, and turn " +
+                "Follow avg back off.\n\n" +
+                "If steady background noise (like HVAC) pushes the room's loudness to " +
+                "20% or more for a full minute, the app automatically raises the volume by " +
+                "4 to compensate, then automatically removes that boost again once the " +
+                "background noise drops back below 15% — no need to reopen the app or " +
+                "recalibrate. A movie scene that's simply loud rather than steady won't " +
+                "trigger this.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
         // ---- Full-width row: 34% instructions | 66% controls ----
@@ -234,10 +235,10 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
     }
 
-    /** Plain read-only row: "label", no buttons - used for Loudness target, which is
-     *  now only ever changed via the Follow avg toggle (or Reset). */
+    /** Plain read-only row: "label", no button - used for Room loudness. Same dp(6)
+     *  top/bottom padding as every other row, so the vertical rhythm stays consistent. */
     private fun infoRow(label: () -> String): TextView {
-        val tv = text("", 16f)
+        val tv = text("", 16f).apply { setPadding(0, dp(6), 0, dp(6)) }
         updaters.add { tv.text = withAccentColor(label()) }
         return tv
     }
@@ -248,22 +249,17 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
         }
         val tv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val reset = Button(this).apply {
-            styleButton(this); text = "Reset"; isAllCaps = false
-            setOnClickListener {
-                State.resetStats()
-                Prefs.setTarget(this@MainActivity, -74f) // back to the 26% default
-                Prefs.setFollowAvg(this@MainActivity, false)
-                reload(); refresh()
-            }
+        val reset = ctrlBtn("Reset", btnWidth) {
+            State.resetStats()
+            Prefs.setTarget(this, -74f) // back to the 26% default
+            Prefs.setFollowAvg(this, false)
+            reload(); refresh()
         }
-        val hPad = dp(20)
-        reset.setPadding(hPad, reset.paddingTop, hPad, reset.paddingBottom)
-        reset.layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
         row.addView(tv); row.addView(reset)
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
@@ -291,6 +287,19 @@ class MainActivity : Activity() {
         }
         b.setTextColor(Color.WHITE)
         b.stateListAnimator = null
+    }
+
+    /** Every button on the settings page is built through here so they're all
+     *  identical: same padding, same fixed width, same dp(6) top margin. That's what
+     *  keeps the vertical rhythm between rows consistent throughout the page. */
+    private fun ctrlBtn(label: String, width: Int, onClick: () -> Unit): Button = Button(this).apply {
+        styleButton(this); isAllCaps = false; text = label
+        val hPad = dp(20)
+        setPadding(hPad, paddingTop, hPad, paddingBottom)
+        layoutParams = LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(6)
+        }
+        setOnClickListener { onClick() }
     }
 
     private fun refresh() {
