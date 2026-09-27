@@ -152,23 +152,20 @@ class MainActivity : Activity() {
             setBackgroundColor(panelBg)
         }
         left.addView(text(
-            "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
+            "\n1. In a quiet room, manually set your remote volume where you like it. " +
+            "Some movies will have a different comfort zone so you might need to adjust this " +
+                "base volume setting later.\n\n" +
                 "2. Press Start leveling, then start your movie. Max volume defaults to " +
-                "the volume you set in step 1 — the app never raises above it.\n\n" +
-                "3. Once the room's Loudness reaches 25% during playback, Loudness " +
-                "Statistics starts gathering High/Low/Avg readings until you press Stop " +
-                "leveling. Toggle Follow avg on to have the Loudness target continuously " +
-                "track the measured average instead of staying fixed at 26%; press Reset " +
-                "to clear the gathered numbers, return the target to 26%, and turn " +
-                "Follow avg back off.\n\n" +
-                "If steady background noise (like HVAC) pushes the room's loudness to " +
-                "20% or more for a full minute, the app automatically raises the volume by " +
-                "4 to compensate, then automatically removes that boost again once the " +
-                "background noise drops back below 15% — no need to reopen the app or " +
-                "recalibrate. A movie scene that's simply loud rather than steady won't " +
-                "trigger this.", 16f
+                "the volume you set in step 1.\n\n" +
+                "3. After playing movie for a few minutes you can press Back + Down for 5 " +
+                "seconds to pull up the app and select Follow avg to use a dynamic Loudness " +
+                "target if the avg stat isn't near the default setting of 26%. \n\n" +
+                "4. If the HVAC kicks on and pushes the room's average loudness to " +
+                "20% or more, the app automatically raises the volume by " +
+                "4 to compensate, then automatically removes that boost once the " +
+                "background noise drops back below 15%.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
-
+        
         // ---- Full-width row: 34% instructions | 66% controls ----
         val rowContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
