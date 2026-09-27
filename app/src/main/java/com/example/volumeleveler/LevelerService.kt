@@ -227,7 +227,8 @@ class LevelerService : Service() {
         val loud = if (State.levelDb.isNaN()) "-" else "${(State.levelDb + 100f).coerceIn(0f, 100f).toInt()}%"
         val loudOverlay = if (State.levelDb.isNaN()) "-"
             else "%02d%%".format((State.levelDb + 100f).coerceIn(0f, 100f).toInt())
-        val tgt = "${(Prefs.target(this) + 100f).coerceIn(0f, 100f).toInt()}%"
+        val tgtDbfs = if (Prefs.followAvg(this) && !State.statsAvg.isNaN()) State.statsAvg else Prefs.target(this)
+        val tgt = "${(tgtDbfs + 100f).coerceIn(0f, 100f).toInt()}%"
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
@@ -338,7 +339,7 @@ class LevelerService : Service() {
                 if (!statsStarted && avg >= STATS_START_DBFS) statsStarted = true
                 if (statsStarted) State.recordStat(avg)
 
-                val target = Prefs.target(this)
+                val target = if (Prefs.followAvg(this) && !State.statsAvg.isNaN()) State.statsAvg else Prefs.target(this)
                 val tol = Prefs.tolerance(this)
                 val loudBy = avg - (target + tol)
                 if (now - dropWindowStart > DROP_WINDOW_MS) { dropWindowStart = now; dropInWindow = 0 }

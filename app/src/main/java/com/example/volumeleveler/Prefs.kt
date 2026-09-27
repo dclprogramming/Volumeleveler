@@ -10,16 +10,16 @@ object Prefs {
     fun setMic(c: Context, v: String) = sp(c).edit().putString("mic", v).apply()
 
     /** Target room level in dBFS (uncalibrated, relative). Shown/edited as a 0-100
-     *  percent. Defaults to 26%; only ever changed after that via the Loudness
-     *  Statistics Set button (locks it to the measured average). */
+     *  percent. Defaults to 26%. This is the fixed/manual value; when followAvg is
+     *  on, the effective target tracks State.statsAvg live instead (see followAvg
+     *  below), and Reset restores this stored value back to 26% and turns followAvg off. */
     fun target(c: Context): Float = sp(c).getFloat("target", -74f)
     fun setTarget(c: Context, v: Float) = sp(c).edit().putFloat("target", v.coerceIn(-80f, -5f)).apply()
 
-     /** Whether the Loudness target is currently locked to the Loudness Statistics
-     *  average (via its Set button) rather than the silence-floor formula. Clearing
-     *  this (via Set on Silence floor) returns to the default formula. */
-    fun targetFromStats(c: Context): Boolean = sp(c).getBoolean("targetFromStats", false)
-    fun setTargetFromStats(c: Context, v: Boolean) = sp(c).edit().putBoolean("targetFromStats", v).apply()
+    /** Whether the Loudness target continuously tracks the Loudness Statistics average
+     *  (the Follow avg toggle) instead of staying fixed at its own stored value. */
+    fun followAvg(c: Context): Boolean = sp(c).getBoolean("followAvg", false)
+    fun setFollowAvg(c: Context, v: Boolean) = sp(c).edit().putBoolean("followAvg", v).apply()
 
     /** Dead-band in dB around the target where the volume is left alone. Hardwired to 1%. */
     fun tolerance(c: Context): Float = 1f
