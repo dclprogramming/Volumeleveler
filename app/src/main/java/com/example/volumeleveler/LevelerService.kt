@@ -51,6 +51,8 @@ class LevelerService : Service() {
     private var hvacDbSum = 0.0
     private var hvacDbSumSq = 0.0
     private var hvacDbCount = 0L
+    // True once this above-threshold streak has had its one steadiness verdict.
+    private var hvacEvaluated = false
     @Volatile private var hvacBoostDelta = 0
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
@@ -87,6 +89,7 @@ class LevelerService : Service() {
             hvacDbSum = 0.0
             hvacDbSumSq = 0.0
             hvacDbCount = 0L
+            hvacEvaluated = false
             hvacBoostDelta = 0
         }
         State.running = true
@@ -343,18 +346,22 @@ class LevelerService : Service() {
                 // dynamics riding on top, so its raw db reading swings much more.
                 // We track the mean/variance of the raw (unsmoothed) db over the
                 // above-threshold streak and only actually boost if the stddev looks
-                // steady; if not, we keep accumulating and re-check every sample, so
-                // it still fires the moment the noise genuinely settles into a hum.
+                // steady. That verdict is made once per streak, on exactly the hold window
+                // (a long loud scene can't slowly average its way under the limit). If
+                // it fails, the streak has to break (loudness dips under 20%) before a
+                // fresh window can be judged.
                 try {
                     if (avg >= HVAC_ON_DBFS) {
                         if (hvacAboveSince == 0L) {
                             hvacAboveSince = now
                             hvacDbSum = 0.0; hvacDbSumSq = 0.0; hvacDbCount = 0L
+                            hvacEvaluated = false
                         }
                         hvacDbSum += db
                         hvacDbSumSq += db.toDouble() * db.toDouble()
                         hvacDbCount++
-                        if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
+                        if (!hvacBoosted && !hvacEvaluated && now - hvacAboveSince >= HVAC_HOLD_MS) {
+                            hvacEvaluated = true // one verdict per streak, judged on exactly the hold window
                             val mean = hvacDbSum / hvacDbCount
                             val stddev = sqrt(max(hvacDbSumSq / hvacDbCount - mean * mean, 0.0))
                             if (stddev <= HVAC_MAX_STDDEV_DB) {
@@ -365,6 +372,7 @@ class LevelerService : Service() {
                         }
                     } else {
                         hvacAboveSince = 0L
+                        hvacEvaluated = false
                         if (hvacBoosted && avg < HVAC_OFF_DBFS) {
                             applyHvacBoost(raise = false)
                             hvacBoosted = false
@@ -554,7 +562,7 @@ class LevelerService : Service() {
         private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
         private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
         private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
-        private const val HVAC_MAX_STDDEV_DB = 2.5f // steady noise varies less than this; higher = real content, skip the boost
+        private const val HVAC_MAX_STDDEV_DB = 1.5f // steady noise varies less than this; higher = real content, skip the boost
         private const val HVAC_BOOST_LEVELS = 4
     }
 }
