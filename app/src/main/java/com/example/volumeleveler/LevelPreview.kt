@@ -9,8 +9,8 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
- * Lightweight mic listener used only to show live numbers (Room loudness, and the
- * auto Target/Silence floor values) while the app is open but not actually leveling.
+ * Lightweight mic listener used only to show live numbers (Room loudness) while the
+ * app is open but not actually leveling.
  * Never adjusts volume. Stops itself the instant real leveling starts, so only one
  * of this or LevelerService ever holds the mic at a time.
  */

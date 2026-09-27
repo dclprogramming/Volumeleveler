@@ -24,14 +24,6 @@ object Prefs {
     /** Dead-band in dB around the target where the volume is left alone. Hardwired to 1%. */
     fun tolerance(c: Context): Float = 1f
 
-    /** Mic level (dBFS) of the quiet room with nothing playing; only meaningful once
-     *  silenceLocked is true; until then, the UI shows a live value (current room
-     *  loudness + 3%) instead of this stored number. */
-    fun silence(c: Context): Float = sp(c).getFloat("silence", -65f)
-    fun setSilence(c: Context, v: Float) = sp(c).edit().putFloat("silence", v.coerceIn(-100f, -10f)).apply()
-    fun silenceLocked(c: Context): Boolean = sp(c).getBoolean("silenceLocked", false)
-    fun setSilenceLocked(c: Context, v: Boolean) = sp(c).edit().putBoolean("silenceLocked", v).apply()
-
     /** Small on-screen readout (needs "Draw over other apps") while leveling runs. */
     fun overlayOn(c: Context): Boolean = sp(c).getBoolean("overlay", false)
     fun setOverlayOn(c: Context, v: Boolean) = sp(c).edit().putBoolean("overlay", v).apply()

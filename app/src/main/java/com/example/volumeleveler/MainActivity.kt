@@ -60,9 +60,6 @@ class MainActivity : Activity() {
         else -> null
     }
 
-    /** dBFS-equivalent silence floor if locked right now: current room loudness + 3%. */
-    private fun liveSilenceDb(): Float = if (State.levelDb.isNaN()) -65f else State.levelDb + 3f
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -131,18 +128,41 @@ class MainActivity : Activity() {
         topRow.addView(actionButtons)
         right.addView(topRow)
 
-        right.addView(infoRow {
+        // Loudness target row: value + Follow avg toggle. The toggle's width is fixed
+        // to comfortably fit the longer "Follow avg: Off" label with padding (so it
+        // doesn't resize between On/Off), and the Reset button below is sized to match.
+        val followBtn = Button(this).apply { styleButton(this); isAllCaps = false }
+        val hPad = dp(20)
+        val ctrlBtnWidth = maxOf(
+            followBtn.paint.measureText("Follow avg: Off"),
+            followBtn.paint.measureText("Follow avg: On")
+        ).toInt() + hPad * 2
+        followBtn.setPadding(hPad, followBtn.paddingTop, hPad, followBtn.paddingBottom)
+        followBtn.layoutParams = LinearLayout.LayoutParams(ctrlBtnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+        followBtn.setOnClickListener {
+            Prefs.setFollowAvg(this, !Prefs.followAvg(this))
+            reload(); refresh()
+        }
+        val targetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val targetTv = text("", 16f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        targetRow.addView(targetTv); targetRow.addView(followBtn)
+        updaters.add {
             val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
             val t = if (followed) State.statsAvg else Prefs.target(this)
-            "Loudness target: ${pct(t)}%" + if (Prefs.followAvg(this)) " (following avg)" else ""
-        })
+            targetTv.text = withAccentColor(
+                "Loudness target: ${pct(t)}%" + if (Prefs.followAvg(this)) " (following avg)" else ""
+            )
+            followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
+        }
+        right.addView(targetRow)
 
-        right.addView(infoRow {
-            "Silence floor: " + if (Prefs.silenceLocked(this)) "${pct(Prefs.silence(this))}%"
-            else "${pct(liveSilenceDb())}% (auto)"
-        })
         val statsRowButtons = mutableListOf<Button>()
-        right.addView(statsRow(captureButtons = { statsRowButtons.addAll(it) }))
+        right.addView(statsRow(ctrlBtnWidth, captureButtons = { statsRowButtons.addAll(it) }))
 
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
@@ -152,21 +172,20 @@ class MainActivity : Activity() {
         }
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
-                "2. Press Start leveling, then start your movie. Silence floor is captured " +
-                "automatically at that moment (current room Loudness + 3% buffer), and Max " +
-                "volume defaults to the volume you set in step 1 — the app never raises " +
-                "above it.\n\n" +
+                "2. Press Start leveling, then start your movie. Max volume defaults to " +
+                "the volume you set in step 1 — the app never raises above it.\n\n" +
                 "3. Once the room's Loudness reaches 25% during playback, Loudness " +
                 "Statistics starts gathering High/Low/Avg readings until you press Stop " +
                 "leveling. Toggle Follow avg on to have the Loudness target continuously " +
                 "track the measured average instead of staying fixed at 26%; press Reset " +
                 "to clear the gathered numbers, return the target to 26%, and turn " +
                 "Follow avg back off.\n\n" +
-                "If sustained background noise (like HVAC) pushes the room's loudness to " +
+                "If steady background noise (like HVAC) pushes the room's loudness to " +
                 "20% or more for a full minute, the app automatically raises the volume by " +
                 "4 to compensate, then automatically removes that boost again once the " +
                 "background noise drops back below 15% — no need to reopen the app or " +
-                "recalibrate.", 16f
+                "recalibrate. A movie scene that's simply loud rather than steady won't " +
+                "trigger this.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
 
         // ---- Full-width row: 34% instructions | 66% controls ----
@@ -209,11 +228,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun lockSilence(liveDb: Float) {
-        Prefs.setSilence(this, liveDb)
-        Prefs.setSilenceLocked(this, true)
-    }
-
     override fun onResume() {
         super.onResume()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -250,23 +264,15 @@ class MainActivity : Activity() {
         return tv
     }
 
-    /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Follow avg (toggles whether the
-     *  Loudness target tracks the measured average live) and Reset (clears the gathered
-     *  numbers, returns the target to 26%, and turns Follow avg off). */
-    private fun statsRow(captureButtons: ((List<Button>) -> Unit)? = null): LinearLayout {
+    /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Reset (clears the gathered
+     *  numbers, returns the Loudness target to 26%, and turns Follow avg off). */
+    private fun statsRow(btnWidth: Int, captureButtons: ((List<Button>) -> Unit)? = null): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val tv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val followBtn = Button(this).apply {
-            styleButton(this); isAllCaps = false
-            setOnClickListener {
-                Prefs.setFollowAvg(this@MainActivity, !Prefs.followAvg(this@MainActivity))
-                reload(); refresh()
-            }
         }
         val reset = Button(this).apply {
             styleButton(this); text = "Reset"; isAllCaps = false
@@ -277,27 +283,14 @@ class MainActivity : Activity() {
                 reload(); refresh()
             }
         }
-        row.addView(tv); row.addView(followBtn); row.addView(reset)
-        // Both buttons get the same fixed width: wide enough to comfortably fit the
-        // longer "Follow avg: Off" label with padding on either side, so the toggle
-        // never resizes/reflows when it flips between On and Off.
         val hPad = dp(20)
-        val widest = maxOf(
-            followBtn.paint.measureText("Follow avg: Off"),
-            followBtn.paint.measureText("Follow avg: On")
-        )
-        val statsBtnWidth = widest.toInt() + hPad * 2
-        listOf(followBtn, reset).forEach { b ->
-            b.setPadding(hPad, b.paddingTop, hPad, b.paddingBottom)
-            b.layoutParams = LinearLayout.LayoutParams(statsBtnWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                marginStart = dp(6)
-            }
-        }
-        captureButtons?.invoke(listOf(followBtn, reset))
+        reset.setPadding(hPad, reset.paddingTop, hPad, reset.paddingBottom)
+        reset.layoutParams = LinearLayout.LayoutParams(btnWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+        row.addView(tv); row.addView(reset)
+        captureButtons?.invoke(listOf(reset))
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
-            tv.text = withAccentColor("Loudness Stats: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
-            followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
+            tv.text = withAccentColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
         }
         return row
     }
@@ -429,9 +422,6 @@ class MainActivity : Activity() {
     }
 
     private fun startLeveler() {
-        // Capture the silence floor (and its derived target) fresh every time Start
-        // leveling is pressed, from the current live room reading.
-        lockSilence(liveSilenceDb())
         LevelPreview.stop()
         startForegroundService(Intent(this, LevelerService::class.java))
         State.running = true

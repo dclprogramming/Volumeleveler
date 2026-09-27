@@ -46,6 +46,12 @@ class LevelerService : Service() {
     // (does not re-gate on every sample dropping back below it).
     @Volatile private var statsStarted = false
     private var hvacAboveSince = 0L
+    // Raw-db running mean/variance over the current above-threshold streak, used to
+    // tell steady HVAC/fan noise apart from a movie scene that's merely loud for a
+    // while (see the false-positive guard around HVAC_MAX_STDDEV_DB below).
+    private var hvacDbSum = 0.0
+    private var hvacDbSumSq = 0.0
+    private var hvacDbCount = 0L
     @Volatile private var hvacBoostDelta = 0
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
@@ -79,6 +85,9 @@ class LevelerService : Service() {
             hvacBoosted = false
             State.hvacBoosted = false
             hvacAboveSince = 0L
+            hvacDbSum = 0.0
+            hvacDbSumSq = 0.0
+            hvacDbCount = 0L
             hvacBoostDelta = 0
         }
         State.running = true
@@ -158,15 +167,31 @@ class LevelerService : Service() {
         }
     }
 
-    private fun updateOverlay(text: String, volBoosted: Boolean) {
+    private fun updateOverlay(text: String, volBoosted: Boolean, targetFollowing: Boolean) {
         main.post {
-            val idx = text.indexOf("Vol ")
-            if (volBoosted && idx >= 0) {
+            if (volBoosted || targetFollowing) {
                 val sb = android.text.SpannableString(text)
-                sb.setSpan(
-                    android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#32CD32")),
-                    idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
+                val lime = android.graphics.Color.parseColor("#32CD32")
+                if (targetFollowing) {
+                    val tIdx = text.indexOf("Target ")
+                    if (tIdx >= 0) {
+                        val valStart = tIdx + 7 // length of "Target "
+                        val valEnd = text.indexOf("  Vol", valStart).let { if (it >= 0) it else text.length }
+                        sb.setSpan(
+                            android.text.style.ForegroundColorSpan(lime),
+                            valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
+                if (volBoosted) {
+                    val idx = text.indexOf("Vol ")
+                    if (idx >= 0) {
+                        sb.setSpan(
+                            android.text.style.ForegroundColorSpan(lime),
+                            idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
                 overlay?.text = sb
             } else {
                 overlay?.text = text
@@ -227,12 +252,13 @@ class LevelerService : Service() {
         val loud = if (State.levelDb.isNaN()) "-" else "${(State.levelDb + 100f).coerceIn(0f, 100f).toInt()}%"
         val loudOverlay = if (State.levelDb.isNaN()) "-"
             else "%02d%%".format((State.levelDb + 100f).coerceIn(0f, 100f).toInt())
-        val tgtDbfs = if (Prefs.followAvg(this) && !State.statsAvg.isNaN()) State.statsAvg else Prefs.target(this)
+        val following = Prefs.followAvg(this) && !State.statsAvg.isNaN()
+        val tgtDbfs = if (following) State.statsAvg else Prefs.target(this)
         val tgt = "${(tgtDbfs + 100f).coerceIn(0f, 100f).toInt()}%"
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur/$maxVol", hvacBoosted)
+        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur/$maxVol", hvacBoosted, following)
     }
 
     // ---- capture + leveling ----
@@ -311,13 +337,32 @@ class LevelerService : Service() {
                 // direction fires - hvacBoosted gates that. Wrapped in try/catch since
                 // an uncaught exception here would silently kill this whole thread,
                 // taking Loudness Statistics (and everything else) down with it.
+                //
+                // False-positive guard: real HVAC/fan noise is steady - it barely
+                // varies sample to sample. A movie scene that's simply loud for a
+                // while (music swell, action sequence) still has dialogue/effect
+                // dynamics riding on top, so its raw db reading swings much more.
+                // We track the mean/variance of the raw (unsmoothed) db over the
+                // above-threshold streak and only actually boost if the stddev looks
+                // steady; if not, we keep accumulating and re-check every sample, so
+                // it still fires the moment the noise genuinely settles into a hum.
                 try {
                     if (avg >= HVAC_ON_DBFS) {
-                        if (hvacAboveSince == 0L) hvacAboveSince = now
+                        if (hvacAboveSince == 0L) {
+                            hvacAboveSince = now
+                            hvacDbSum = 0.0; hvacDbSumSq = 0.0; hvacDbCount = 0L
+                        }
+                        hvacDbSum += db
+                        hvacDbSumSq += db.toDouble() * db.toDouble()
+                        hvacDbCount++
                         if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
-                            applyHvacBoost(raise = true)
-                            hvacBoosted = true
-                            State.hvacBoosted = true
+                            val mean = hvacDbSum / hvacDbCount
+                            val stddev = sqrt(max(hvacDbSumSq / hvacDbCount - mean * mean, 0.0))
+                            if (stddev <= HVAC_MAX_STDDEV_DB) {
+                                applyHvacBoost(raise = true)
+                                hvacBoosted = true
+                                State.hvacBoosted = true
+                            }
                         }
                     } else {
                         hvacAboveSince = 0L
@@ -513,6 +558,7 @@ class LevelerService : Service() {
         private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
         private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
         private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
+        private const val HVAC_MAX_STDDEV_DB = 2.5f // steady noise varies less than this; higher = real content, skip the boost
         private const val HVAC_BOOST_LEVELS = 4
     }
 }
