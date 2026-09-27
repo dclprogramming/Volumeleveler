@@ -139,7 +139,7 @@ class MainActivity : Activity() {
         val targetRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(0, dp(2), 0, dp(2))
         }
         val targetTv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -235,10 +235,11 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
     }
 
-    /** Plain read-only row: "label", no button - used for Room loudness. Same dp(6)
-     *  top/bottom padding as every other row, so the vertical rhythm stays consistent. */
+    /** Plain read-only row: "label", no button - used for Room loudness. Tighter dp(2)
+     *  top/bottom padding (shared with targetRow/statsRow) so the loudness group reads
+     *  as one compact block, distinct from the more open dp(6) rhythm of rows 1-3. */
     private fun infoRow(label: () -> String): TextView {
-        val tv = text("", 16f).apply { setPadding(0, dp(6), 0, dp(6)) }
+        val tv = text("", 16f).apply { setPadding(0, dp(2), 0, dp(2)) }
         updaters.add { tv.text = withAccentColor(label()) }
         return tv
     }
@@ -249,7 +250,7 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(0, dp(2), 0, dp(2))
         }
         val tv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
