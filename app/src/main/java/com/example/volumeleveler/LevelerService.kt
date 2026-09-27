@@ -40,8 +40,11 @@ class LevelerService : Service() {
     // Volume ceiling: captured once when leveling starts and held fixed until the next
     // Stop/Start cycle. Manual remote changes while running are NOT applied to this.
     @Volatile private var baseVol = -1
-    @Volatile private var levelingStartElapsed = 0L
     @Volatile private var hvacBoosted = false
+    // Loudness Statistics: starts gathering once the room's active loudness has hit
+    // STATS_START_DBFS at least once this session, and keeps gathering from then on
+    // (does not re-gate on every sample dropping back below it).
+    @Volatile private var statsStarted = false
     private var hvacAboveSince = 0L
     @Volatile private var hvacBoostDelta = 0
     private var knownVol = -1        // volume as of our last look
@@ -72,7 +75,7 @@ class LevelerService : Service() {
             registered = true
             baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             knownVol = baseVol
-            levelingStartElapsed = SystemClock.elapsedRealtime()
+            statsStarted = false
             hvacBoosted = false
             State.hvacBoosted = false
             hvacAboveSince = 0L
@@ -332,7 +335,8 @@ class LevelerService : Service() {
                 if (silent) {
                     continue
                 }
-                if (now - levelingStartElapsed >= STATS_DELAY_MS) State.recordStat(avg)
+                if (!statsStarted && avg >= STATS_START_DBFS) statsStarted = true
+                if (statsStarted) State.recordStat(avg)
 
                 val target = Prefs.target(this)
                 val tol = Prefs.tolerance(this)
@@ -504,7 +508,7 @@ class LevelerService : Service() {
         private const val LOWER_COOLDOWN = 400L
         private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
         private const val RAISE_COOLDOWN = 400L
-        private const val STATS_DELAY_MS = 180_000L  // Loudness Statistics starts 3 minutes into a session
+        private const val STATS_START_DBFS = -75f  // 25% - Loudness Statistics starts once active loudness hits this
         private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
         private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
         private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting

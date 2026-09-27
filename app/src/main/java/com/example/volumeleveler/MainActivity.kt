@@ -133,21 +133,12 @@ class MainActivity : Activity() {
 
         right.addView(infoRow { "Loudness target: ${pct(Prefs.target(this))}%" })
 
-        val silenceRowButtons = mutableListOf<Button>()
-        right.addView(lockableRow(
-            title = "Silence floor",
-            display = {
-                if (Prefs.silenceLocked(this)) "${pct(Prefs.silence(this))}% (set)"
-                else "${pct(liveSilenceDb())}% (auto)"
-            },
-            onSet = { lockSilence(liveSilenceDb()) },
-            onAdjust = { d ->
-                if (!Prefs.silenceLocked(this)) lockSilence(liveSilenceDb())
-                Prefs.setSilence(this, Prefs.silence(this) + d)
-            },
-            captureButtons = { silenceRowButtons.addAll(it) }
-        ))
-        right.addView(statsRow())
+        right.addView(infoRow {
+            "Silence floor: " + if (Prefs.silenceLocked(this)) "${pct(Prefs.silence(this))}%"
+            else "${pct(liveSilenceDb())}% (auto)"
+        })
+        val statsRowButtons = mutableListOf<Button>()
+        right.addView(statsRow(captureButtons = { statsRowButtons.addAll(it) }))
 
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
@@ -157,16 +148,15 @@ class MainActivity : Activity() {
         }
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
-                "2. Press Set on Silence floor to capture the current room's Loudness level " +
-                "(the app adds a +3% buffer). This is separate from Loudness target, which " +
-                "defaults to 26% and doesn't need to be touched.\n\n" +
-                "3. Press Start leveling, then start your movie. Max volume defaults to the " +
-                "volume you set in step 1 — the app never raises above it.\n\n" +
-                "4. About 3 minutes into playback, Loudness Statistics starts gathering " +
-                "High/Low/Avg readings until you press Stop leveling. If the default 26% " +
-                "target isn't matching your content well, press Set next to it to lock the " +
-                "Loudness target to the measured average instead, or Reset to clear the " +
-                "gathered numbers.\n\n" +
+                "2. Press Start leveling, then start your movie. Silence floor is captured " +
+                "automatically at that moment (current room Loudness + 3% buffer), and Max " +
+                "volume defaults to the volume you set in step 1 — the app never raises " +
+                "above it.\n\n" +
+                "3. Once the room's Loudness reaches 25% during playback, Loudness " +
+                "Statistics starts gathering High/Low/Avg readings until you press Stop " +
+                "leveling. If the default 26% target isn't matching your content well, " +
+                "press Set next to it to lock the Loudness target to the measured average " +
+                "instead, or Reset to clear the gathered numbers.\n\n" +
                 "If sustained background noise (like HVAC) pushes the room's loudness to " +
                 "20% or more for a full minute, the app automatically raises the volume by " +
                 "4 to compensate, then automatically removes that boost again once the " +
@@ -199,10 +189,10 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        // Match the 3 action buttons' width to the Silence floor row's Set/-/+ combined
-        // width, once that row has actually been measured (post{} runs after layout).
+        // Match the 3 action buttons' width to the Loudness Statistics row's Set/Reset
+        // combined width, once that row has actually been measured (post{} runs after layout).
         rowContainer.post {
-            val combined = silenceRowButtons.sumOf { it.width }
+            val combined = statsRowButtons.sumOf { it.width }
             if (combined > 0) {
                 listOf(toggleBtn, overlayBtn, micBtn).forEach { b ->
                     b.layoutParams = LinearLayout.LayoutParams(combined, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -257,7 +247,7 @@ class MainActivity : Activity() {
 
     /** "Loudness Statistics: High:#% Low:#% Avg:#%" with Set (locks the Loudness target
      *  to the measured average) and Reset (clears the gathered numbers). */
-    private fun statsRow(): LinearLayout {
+    private fun statsRow(captureButtons: ((List<Button>) -> Unit)? = null): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -280,34 +270,11 @@ class MainActivity : Activity() {
             setOnClickListener { State.resetStats(); reload(); refresh() }
         }
         row.addView(tv); row.addView(set); row.addView(reset)
+        captureButtons?.invoke(listOf(set, reset))
         fun fmt(v: Float) = if (v.isNaN()) "-" else "${pct(v)}%"
         updaters.add {
             tv.text = withAccentColor("Loudness Statistics: High:${fmt(State.statsHigh)}  Low:${fmt(State.statsLow)}  Avg:${fmt(State.statsAvg)}")
         }
-        return row
-    }
-
-    /** One line: "Title: value", then Set, then -, then +. Used for Loudness target / Silence floor. */
-    private fun lockableRow(
-        title: String, display: () -> String, onSet: () -> Unit, onAdjust: (Int) -> Unit,
-        captureButtons: ((List<Button>) -> Unit)? = null
-    ): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val tv = text("", 16f).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val set = Button(this).apply {
-            styleButton(this); text = "Set"; isAllCaps = false
-            setOnClickListener { onSet(); reload(); refresh() }
-        }
-        val minus = Button(this).apply { styleButton(this); text = "−"; setOnClickListener { onAdjust(-1); reload(); refresh() } }
-        val plus = Button(this).apply { styleButton(this); text = "+"; setOnClickListener { onAdjust(+1); reload(); refresh() } }
-        row.addView(tv); row.addView(set); row.addView(minus); row.addView(plus)
-        updaters.add { tv.text = withAccentColor("$title: ${display()}") }
-        captureButtons?.invoke(listOf(set, minus, plus))
         return row
     }
 
@@ -438,9 +405,9 @@ class MainActivity : Activity() {
     }
 
     private fun startLeveler() {
-        // Lock in the auto silence floor (and its derived target) if Set was never pressed,
-        // so the service always has real numbers to work from.
-        if (!Prefs.silenceLocked(this)) lockSilence(liveSilenceDb())
+        // Capture the silence floor (and its derived target) fresh every time Start
+        // leveling is pressed, from the current live room reading.
+        lockSilence(liveSilenceDb())
         LevelPreview.stop()
         startForegroundService(Intent(this, LevelerService::class.java))
         State.running = true
