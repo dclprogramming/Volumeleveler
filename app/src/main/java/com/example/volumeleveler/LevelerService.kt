@@ -591,8 +591,8 @@ class LevelerService : Service() {
         private const val HVAC_ON_DBFS = -80f              // 20 %
         private const val HVAC_OFF_DBFS = -85f             // 15 %
         private const val HVAC_HOLD_MS = 60_000L
-        private const val HVAC_MUTE_SETTLE_MS = 2500L      // give CEC/ARC time to mute
-        private const val HVAC_MUTE_MEASURE_MS = 800L
+        private const val HVAC_MUTE_SETTLE_MS = 1500L      // give CEC/ARC time to mute
+        private const val HVAC_MUTE_MEASURE_MS = 500L
         private const val HVAC_MUTE_MAX_DBFS = -82f        // 18 %
         private const val HVAC_RETRY_BACKOFF_MS = 20_000L  // after failed test
         private const val HVAC_BOOST_LEVELS = 4
