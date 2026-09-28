@@ -176,36 +176,41 @@ class LevelerService : Service() {
     }
 
     private fun updateOverlay(text: String, volBoosted: Boolean, targetFollowing: Boolean) {
-        main.post {
-            if (volBoosted || targetFollowing) {
-                val sb = android.text.SpannableString(text)
-                val lime = android.graphics.Color.parseColor("#32CD32")
-                if (targetFollowing) {
-                    val tIdx = text.indexOf("Target ")
-                    if (tIdx >= 0) {
-                        val valStart = tIdx + 7 // length of "Target "
-                        val valEnd = text.indexOf("  Vol", valStart).let { if (it >= 0) it else text.length }
-                        sb.setSpan(
-                            android.text.style.ForegroundColorSpan(lime),
-                            valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                    }
+    main.post {
+        if (volBoosted || targetFollowing) {
+            val sb = android.text.SpannableString(text)
+            val lime = android.graphics.Color.parseColor("#32CD32")
+
+            // Highlight the Target value when following average OR when HVAC-boosted
+            if (targetFollowing || volBoosted) {
+                val tIdx = text.indexOf("Target ")
+                if (tIdx >= 0) {
+                    val valStart = tIdx + 7 // length of "Target "
+                    val valEnd = text.indexOf("  Vol", valStart).let { if (it >= 0) it else text.length }
+                    sb.setSpan(
+                        android.text.style.ForegroundColorSpan(lime),
+                        valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
                 }
-                if (volBoosted) {
-                    val idx = text.indexOf("Vol ")
-                    if (idx >= 0) {
-                        sb.setSpan(
-                            android.text.style.ForegroundColorSpan(lime),
-                            idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                    }
-                }
-                overlay?.text = sb
-            } else {
-                overlay?.text = text
             }
+
+            // Highlight the Vol value when HVAC-boosted
+            if (volBoosted) {
+                val idx = text.indexOf("Vol ")
+                if (idx >= 0) {
+                    sb.setSpan(
+                        android.text.style.ForegroundColorSpan(lime),
+                        idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+            }
+
+            overlay?.text = sb
+        } else {
+            overlay?.text = text
         }
     }
+}
 
     // ---- device hot-plug ----
 
