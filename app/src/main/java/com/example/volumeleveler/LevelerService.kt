@@ -591,7 +591,7 @@ class LevelerService : Service() {
         private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
         private const val HVAC_MUTE_SETTLE_MS = 1500L // let the mute land (HDMI-CEC lag) before reading
         private const val HVAC_MUTE_MEASURE_MS = 500L // then read raw loudness for this long, still muted
-        private const val HVAC_MUTE_MAX_DBFS = -82f   // 18%: muted room at/above this = HVAC, below = loud scene
+        private const val HVAC_MUTE_MAX_DBFS = -85f   // 18%: muted room at/above this = HVAC, below = loud scene
         private const val HVAC_BOOST_LEVELS = 4
     }
 }
