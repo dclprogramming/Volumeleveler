@@ -10,6 +10,9 @@ object State {
     @Volatile var baseVol = -1
     /** Whether the auto HVAC boost is currently active - drives Your volume's color. */
     @Volatile var hvacBoosted = false
+    /** While the HVAC boost is active the Loudness target is raised by 3% (3 dB) so the
+     *  leveler helps pull the audio up over the background noise. */
+    val hvacTargetBonusDb: Float get() = if (hvacBoosted) 3f else 0f
 
     /** Loudness Statistics: High/Low/Avg dBFS gathered starting once room loudness has
      *  hit STATS_START_DBFS (25%) during a Start leveling session, until Stop leveling.

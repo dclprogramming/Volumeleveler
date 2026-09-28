@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class LevelerService : Service() {
@@ -46,6 +47,15 @@ class LevelerService : Service() {
     @Volatile private var statsStarted = false
     private var hvacAboveSince = 0L
     @Volatile private var hvacBoostDelta = 0
+    // HVAC mute check: when loudness has held >=20% for the hold time, the TV is muted
+    // for ~2s to see whether the room stays loud without it (real background noise) or
+    // drops (just a loud scene). A failed check re-arms by resetting hvacAboveSince, so
+    // it re-uses the same 1-minute hold timer for the next attempt rather than a second
+    // separate one. See the block in captureLoop.
+    @Volatile private var hvacTesting = false
+    private var hvacTestStart = 0L
+    private var hvacTestSum = 0.0
+    private var hvacTestN = 0
     private var knownVol = -1        // volume as of our last look
     private var adjusted = false     // we just changed it ourselves
     private var settleUntil = 0L     // wait for our own change to show up before judging
@@ -79,6 +89,7 @@ class LevelerService : Service() {
             State.hvacBoosted = false
             hvacAboveSince = 0L
             hvacBoostDelta = 0
+            hvacTesting = false
         }
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
@@ -243,12 +254,13 @@ class LevelerService : Service() {
         val loudOverlay = if (State.levelDb.isNaN()) "-"
             else "%02d%%".format((State.levelDb + 100f).coerceIn(0f, 100f).toInt())
         val following = Prefs.followAvg(this) && !State.statsAvg.isNaN()
-        val tgtDbfs = if (following) State.statsAvg else Prefs.target(this)
+        val tgtDbfs = (if (following) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
         val tgt = "${(tgtDbfs + 100f).coerceIn(0f, 100f).toInt()}%"
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur/$maxVol", hvacBoosted, following)
+        val volPct = if (maxVol > 0) (cur * 100f / maxVol).roundToInt() else 0
+        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $volPct%", hvacBoosted, following)
     }
 
     // ---- capture + leveling ----
@@ -295,6 +307,8 @@ class LevelerService : Service() {
             var dropWindowStart = 0L
             var dropInWindow = 0
             var lastAdjust = 0L
+            var preTestAvg = Float.NaN   // smoothed levels saved across the HVAC mute check
+            var preTestSlow = Float.NaN
 
             while (gen == generation.get()) {
                 val n = rec.read(buf, 0, buf.size)
@@ -310,6 +324,41 @@ class LevelerService : Service() {
                     sum += s * s
                 }
                 val db = (20.0 * log10(max(sqrt(sum / n), 1e-7))).toFloat()
+
+                // HVAC mute check in progress: the TV is muted on purpose, so freeze the
+                // smoothed levels, stats, and volume leveling and just collect RAW
+                // (unsmoothed) readings once the mute has had time to land.
+                if (hvacTesting) {
+                    val t = SystemClock.elapsedRealtime()
+                    val elapsed = t - hvacTestStart
+                    if (elapsed >= HVAC_MUTE_SETTLE_MS) { hvacTestSum += db; hvacTestN++ }
+                    if (elapsed >= HVAC_MUTE_SETTLE_MS + HVAC_MUTE_MEASURE_MS) {
+                        val muteTook = am.isStreamMute(AudioManager.STREAM_MUSIC)
+                        val meanDb = if (hvacTestN > 0) (hvacTestSum / hvacTestN).toFloat() else Float.NaN
+                        hvacTesting = false
+                        try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+                        avg = preTestAvg; slow = preTestSlow
+                        settleUntil = t + 1500
+                        State.status = "Listening"
+                        // Room still >=18% with the TV silent = background noise (HVAC).
+                        // Anything else (dropped, or the mute never registered) = no boost.
+                        if (muteTook && !meanDb.isNaN() && meanDb >= HVAC_MUTE_MAX_DBFS) {
+                            try {
+                                applyHvacBoost(raise = true)
+                                hvacBoosted = true
+                                State.hvacBoosted = true
+                            } catch (e: Exception) {
+                                State.status = "HVAC boost error: ${e.javaClass.simpleName}"
+                            }
+                        } else {
+                            // Loud scene (or the mute didn't register) - re-arm the SAME
+                            // 1-minute hold timer instead of a second one, so it won't
+                            // retry until loudness has held >=20% for another full minute.
+                            hvacAboveSince = t
+                        }
+                    }
+                    continue
+                }
                 // Fast attack (loud sounds register within ~100 ms), slow release (~1.5 s).
                 avg = if (avg.isNaN()) db else avg + (if (db > avg) ATTACK else RELEASE) * (db - avg)
                 slow = if (slow.isNaN()) db else slow + (if (db > slow) SLOW_ATTACK else SLOW_RELEASE) * (db - slow)
@@ -321,7 +370,10 @@ class LevelerService : Service() {
 
                 // Auto HVAC boost/unboost: sustained elevated background noise (avg
                 // staying >=20% continuously for a full minute) suggests something
-                // like HVAC came on, so nudge the baseline up by 4 to compensate.
+                // like HVAC came on. To confirm it, the TV is briefly muted: if the
+                // room stays >=18% anyway it's background noise, so nudge the baseline
+                // up by 4 (and the target up 3%) to compensate; if it drops, it was
+                // just a loud scene and nothing changes.
                 // Dropping below 15% at all (no sustain needed) suggests it went back
                 // off, so reverse it. Each direction only fires once until the other
                 // direction fires - hvacBoosted gates that. Wrapped in try/catch since
@@ -331,9 +383,15 @@ class LevelerService : Service() {
                     if (avg >= HVAC_ON_DBFS) {
                         if (hvacAboveSince == 0L) hvacAboveSince = now
                         if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
-                            applyHvacBoost(raise = true)
-                            hvacBoosted = true
-                            State.hvacBoosted = true
+                            if (am.isVolumeFixed || am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                                hvacAboveSince = now // can't run the check right now - re-arm the hold timer
+                            } else {
+                                preTestAvg = avg; preTestSlow = slow
+                                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+                                hvacTestStart = now; hvacTestSum = 0.0; hvacTestN = 0
+                                hvacTesting = true
+                                State.status = "Checking background noise"
+                            }
                         }
                     } else {
                         hvacAboveSince = 0L
@@ -355,7 +413,8 @@ class LevelerService : Service() {
                 if (!statsStarted && avg >= STATS_START_DBFS) statsStarted = true
                 if (statsStarted) State.recordStat(avg)
 
-                val target = if (Prefs.followAvg(this) && !State.statsAvg.isNaN()) State.statsAvg else Prefs.target(this)
+                val target = (if (Prefs.followAvg(this) && !State.statsAvg.isNaN()) State.statsAvg else Prefs.target(this)) +
+                    State.hvacTargetBonusDb
                 val tol = Prefs.tolerance(this)
                 val loudBy = avg - (target + tol)
                 if (now - dropWindowStart > DROP_WINDOW_MS) { dropWindowStart = now; dropInWindow = 0 }
@@ -399,6 +458,10 @@ class LevelerService : Service() {
         } catch (e: Exception) {
             State.status = "Error: ${e.javaClass.simpleName}"
         } finally {
+            if (hvacTesting) { // never leave the TV muted if we stop mid-check
+                hvacTesting = false
+                try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+            }
             try { rec?.stop() } catch (_: Exception) {}
             rec?.release()
         }
@@ -526,6 +589,9 @@ class LevelerService : Service() {
         private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
         private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
         private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
+        private const val HVAC_MUTE_SETTLE_MS = 1500L // let the mute land (HDMI-CEC lag) before reading
+        private const val HVAC_MUTE_MEASURE_MS = 500L // then read raw loudness for this long, still muted
+        private const val HVAC_MUTE_MAX_DBFS = -82f   // 18%: muted room at/above this = HVAC, below = loud scene
         private const val HVAC_BOOST_LEVELS = 4
     }
 }
