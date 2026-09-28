@@ -165,7 +165,7 @@ class MainActivity : Activity() {
                 "4 to compensate, then automatically removes that boost once the " +
                 "background noise drops back below 15%.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
-        
+
         // ---- Full-width row: 34% instructions | 66% controls ----
         val rowContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
