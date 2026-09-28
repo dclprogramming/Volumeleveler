@@ -81,15 +81,18 @@ class LevelerService : Service() {
             lastSig = signature()
             am.registerAudioDeviceCallback(deviceCb, Handler(Looper.getMainLooper()))
             registered = true
-            baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            knownVol = baseVol
-            statsStarted = false
-            hvacBoosted = false
-            State.hvacBoosted = false
-            hvacAboveSince = 0L
-            hvacBoostDelta = 0
-            hvacTesting = false
         }
+
+        // These must run on EVERY Start so a new detection cycle can begin
+        baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        knownVol = baseVol
+        statsStarted = false
+        hvacBoosted = false
+        State.hvacBoosted = false
+        hvacAboveSince = 0L
+        hvacBoostDelta = 0
+        hvacTesting = false
+
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
         startCapture() // also used as "reload settings" when the UI pings the service
