@@ -598,6 +598,6 @@ class LevelerService : Service() {
         private const val HVAC_MUTE_MEASURE_MS = 500L
         private const val HVAC_MUTE_MAX_DBFS = -82f        // 18 %
         private const val HVAC_RETRY_BACKOFF_MS = 20_000L  // after failed test
-        private const val HVAC_BOOST_LEVELS = 4
+        private const val HVAC_BOOST_LEVELS = 5
     }
 }
