@@ -267,7 +267,7 @@ class LevelerService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
         val volPct = if (maxVol > 0) (cur * 100f / maxVol).roundToInt() else 0
-        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $volPct%", hvacBoosted, following)
+        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur", hvacBoosted, following)
     }
 
     // ---- capture + leveling ----
