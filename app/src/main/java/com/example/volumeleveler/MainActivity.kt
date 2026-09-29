@@ -132,16 +132,33 @@ class MainActivity : Activity() {
         }
         val targetTv = text("", 16f)
         right.addView(pairedRow(targetTv, followBtn))
-        updaters.add {
-            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
-            val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
-            val t = (if (followed) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
-            targetTv.text = withAccentColor(
-                "Room loudness: $level\nLoudness target: ${pct(t)}%" +
-                    if (Prefs.followAvg(this)) " (following avg)" else ""
+       updaters.add {
+    val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
+    val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
+    val t = (if (followed) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
+    val targetPct = "${pct(t)}%"
+
+    val base = "Room loudness: $level\nLoudness target: $targetPct" +
+        if (Prefs.followAvg(this)) " (following avg)" else ""
+
+    val sb = withAccentColor(base)
+
+    // Lime when following avg OR when HVAC-boosted
+    if (followed || State.hvacBoosted) {
+        val idx = base.indexOf(targetPct)
+        if (idx >= 0) {
+            sb.setSpan(
+                ForegroundColorSpan(Color.parseColor("#32CD32")),
+                idx,
+                idx + targetPct.length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
             )
-            followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
+    }
+
+    targetTv.text = sb
+    followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
+} 
 
         right.addView(statsRow(btnWidth))
 
