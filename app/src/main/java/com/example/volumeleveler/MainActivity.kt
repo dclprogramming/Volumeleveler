@@ -25,6 +25,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.roundToInt
@@ -41,6 +42,9 @@ class MainActivity : Activity() {
     private lateinit var overlayBtn: Button
     private lateinit var boostBtn: Button
     private lateinit var boostStatusView: TextView
+    private lateinit var waveBg: WaveBackgroundView
+    private lateinit var bgStatusView: TextView
+    private lateinit var bgBtn: Button
     private var pendingStart = false
     private var pendingPreviewPermission = false
 
@@ -84,6 +88,13 @@ class MainActivity : Activity() {
         val screenW = resources.displayMetrics.widthPixels
         val panelBg = Color.parseColor("#101418")
         val rightColW = screenW * 66 / 100
+
+        // Background style (0 = Static is the default). Stored in its own tiny prefs file.
+        val uiPrefs = getSharedPreferences("ui", MODE_PRIVATE)
+        waveBg = WaveBackgroundView(this).apply {
+            mode = uiPrefs.getInt("bg_mode", WaveBackgroundView.MODE_STATIC)
+                .coerceIn(0, WaveBackgroundView.NAMES.size - 1)
+        }
 
         // ---- Right column (66%): controls ----
         val right = LinearLayout(this).apply {
@@ -187,6 +198,16 @@ class MainActivity : Activity() {
         }
         right.addView(pairedRow(boostStatusView, boostBtn))
 
+        // Bottom row: current background style, lined up with the button that cycles it.
+        bgStatusView = text("", 16f)
+        bgBtn = ctrlBtn("Next background", btnWidth) {
+            val next = (waveBg.mode + 1) % WaveBackgroundView.NAMES.size
+            waveBg.mode = next
+            uiPrefs.edit().putInt("bg_mode", next).apply()
+            refresh()
+        }
+        right.addView(pairedRow(bgStatusView, bgBtn))
+
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -211,11 +232,16 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
         }
         rowContainer.addView(left, LinearLayout.LayoutParams(screenW * 34 / 100, LinearLayout.LayoutParams.MATCH_PARENT))
-        rowContainer.addView(right, LinearLayout.LayoutParams(rightColW, LinearLayout.LayoutParams.MATCH_PARENT))
+        // Scrollable so the extra bottom row can never get clipped on shorter screens.
+        val rightScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(right)
+        }
+        rowContainer.addView(rightScroll, LinearLayout.LayoutParams(rightColW, LinearLayout.LayoutParams.MATCH_PARENT))
 
         // Animated waveform sits behind the (now transparent) panels.
         val root = FrameLayout(this).apply { setBackgroundColor(panelBg) }
-        root.addView(WaveBackgroundView(this), FrameLayout.LayoutParams(
+        root.addView(waveBg, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         root.addView(rowContainer, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -375,6 +401,11 @@ class MainActivity : Activity() {
         val boostOn = Prefs.boostEnabled(this)
         boostStatusView.text = onOffText("HVAC boost: ", boostOn)
         boostBtn.text = if (boostOn) "Disable boost" else "Enable boost"
+
+        val bgPrefix = "Background: "
+        val bgSb = SpannableStringBuilder(bgPrefix + WaveBackgroundView.NAMES[waveBg.mode])
+        bgSb.setSpan(ForegroundColorSpan(ACCENT_COLOR), bgPrefix.length, bgSb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        bgStatusView.text = bgSb
     }
 
     private fun cycleMic() {
