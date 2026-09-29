@@ -132,33 +132,25 @@ class MainActivity : Activity() {
         }
         val targetTv = text("", 16f)
         right.addView(pairedRow(targetTv, followBtn))
-       updaters.add {
-    val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
-    val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
-    val t = (if (followed) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
-    val targetPct = "${pct(t)}%"
-
-    val base = "Room loudness: $level\nLoudness target: $targetPct" +
-        if (Prefs.followAvg(this)) " (following avg)" else ""
-
-    val sb = withAccentColor(base)
-
-    // Lime when following avg OR when HVAC-boosted
-    if (followed || State.hvacBoosted) {
-        val idx = base.indexOf(targetPct)
-        if (idx >= 0) {
-            sb.setSpan(
-                ForegroundColorSpan(Color.parseColor("#32CD32")),
-                idx,
-                idx + targetPct.length,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
+        updaters.add {
+            val level = if (State.levelDb.isNaN()) "-" else "${pct(State.levelDb)}%"
+            val followed = Prefs.followAvg(this) && !State.statsAvg.isNaN()
+            val t = (if (followed) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
+            val targetStr = "${pct(t)}%" + if (Prefs.followAvg(this)) " (following avg)" else ""
+            val fullStr = "Room loudness: $level\nLoudness target: $targetStr"
+            val sb = withAccentColor(fullStr)
+            if (State.hvacBoosted) {
+                val idx = fullStr.indexOf(targetStr)
+                if (idx >= 0) {
+                    sb.setSpan(
+                        ForegroundColorSpan(Color.parseColor("#32CD32")),
+                        idx, idx + targetStr.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+            }
+            targetTv.text = sb
+            followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
         }
-    }
-
-    targetTv.text = sb
-    followBtn.text = if (Prefs.followAvg(this)) "Follow avg: On" else "Follow avg: Off"
-} 
 
         right.addView(statsRow(btnWidth))
 
@@ -169,19 +161,24 @@ class MainActivity : Activity() {
             setBackgroundColor(panelBg)
         }
         left.addView(text(
-            "\n1. In a quiet room, manually set your remote volume where you like it. " +
-            "Some movies will have a different comfort zone so you might need to adjust this " +
-                "base volume setting later.\n\n" +
+            "\n1. In a quiet room, manually set your remote volume where you like it.\n\n" +
                 "2. Press Start leveling, then start your movie. Max volume defaults to " +
-                "the volume you set in step 1.\n\n" +
-                "3. After playing movie for a few minutes you can press Back + Down for 5 " +
-                "seconds to pull up the app and select Follow avg to use a dynamic Loudness " +
-                "target if the avg stat isn't near the default setting of 26%. \n\n" +
-                "4. If the HVAC kicks on and pushes the room's average loudness to " +
-                "20% or more, the app automatically raises the volume by " +
-                "4 to compensate, then automatically removes that boost once the " +
-                "background noise drops back below 15%.", 16f
+                "the volume you set in step 1 — the app never raises above it.\n\n" +
+                "3. Once the room's Loudness reaches 25% during playback, Loudness " +
+                "Statistics starts gathering High/Low/Avg readings until you press Stop " +
+                "leveling. Toggle Follow avg on to have the Loudness target continuously " +
+                "track the measured average instead of staying fixed at 26%; press Reset " +
+                "to clear the gathered numbers, return the target to 26%, and turn " +
+                "Follow avg back off.\n\n" +
+                "If sustained background noise (like HVAC) holds the room's loudness at " +
+                "20% or more for a full minute, the app briefly mutes the TV (about 2 " +
+                "seconds) to check. If the room is still at 18% or higher with the TV " +
+                "silent, it's background noise, so the app raises the volume by 4 and the " +
+                "Loudness target by 3%, then removes both once the noise drops back " +
+                "below 15%. If the room goes quiet when muted, it was just a loud scene " +
+                "and nothing changes.", 16f
         ).apply { setTextColor(Color.parseColor("#FFFFFF")) })
+
         // ---- Full-width row: 34% instructions | 66% controls ----
         val rowContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
