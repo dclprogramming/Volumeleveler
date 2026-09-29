@@ -506,25 +506,30 @@ class LevelerService : Service() {
     /** Highest volume level the app may raise to: your own baseline, never above it. */
     private fun ceilingLevels(): Int = baseVol
 
-    /** Raises or lowers the actual volume (clamped to the device's min/max), and moves
-     *  baseVol by that same real amount, so the ceiling never falls behind - and so
-     *  reversing it later exactly undoes it, even if the original boost got clamped
-     *  short (e.g. near the device's max volume). Unboosting reverses the EXACT
-     *  amount recorded in hvacBoostDelta, rather than independently recomputing a
-     *  fresh delta, so baseVol always returns to precisely its pre-boost value. */
+    /** Raises or lowers ONLY baseVol (the volume ceiling); it never touches the live
+     *  stream volume. The floor (baseVol - 8), the ceiling, and the raise branch in the
+     *  leveling loop all follow baseVol automatically, so the real volume climbs to the
+     *  new ceiling on its own when the room is quiet.
+     *
+     *  Reading/adjusting the live volume here was the bug: this runs right after the
+     *  HVAC mute check unmutes, when getStreamVolume() can still report a stale muted
+     *  value (CEC/ARC lag), which made the boost fire from ~0.
+     *
+     *  The raise is clamped to the device's max volume, and the exact amount applied is
+     *  recorded in hvacBoostDelta. Unboosting reverses that EXACT amount, so baseVol
+     *  always returns to precisely its pre-boost value. */
     private fun applyHvacBoost(raise: Boolean) {
         if (am.isVolumeFixed) return
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val delta = if (raise) (cur + HVAC_BOOST_LEVELS).coerceAtMost(maxVol) - cur else -hvacBoostDelta
-        if (delta == 0) { hvacBoostDelta = 0; return }
-        val target = (cur + delta).coerceIn(0, maxVol)
-        val steps = target - cur
-        if (steps == 0) { hvacBoostDelta = 0; return }
-        val dir = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        repeat(kotlin.math.abs(steps)) { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0) }
-        baseVol += steps
-        hvacBoostDelta = if (raise) steps else 0
+        if (raise) {
+            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val delta = ((baseVol + HVAC_BOOST_LEVELS).coerceAtMost(maxVol) - baseVol).coerceAtLeast(0)
+            baseVol += delta
+            hvacBoostDelta = delta
+        } else {
+            baseVol = (baseVol - hvacBoostDelta).coerceAtLeast(0)
+            hvacBoostDelta = 0
+        }
+        State.baseVol = baseVol
     }
 
     private fun step(dir: Int, count: Int): Int {
