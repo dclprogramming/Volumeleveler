@@ -38,6 +38,8 @@ class MainActivity : Activity() {
     private lateinit var toggleBtn: Button
     private lateinit var micBtn: Button
     private lateinit var overlayBtn: Button
+    private lateinit var boostBtn: Button
+    private lateinit var boostStatusView: TextView
     private var pendingStart = false
     private var pendingPreviewPermission = false
 
@@ -164,6 +166,14 @@ class MainActivity : Activity() {
 } 
 
         right.addView(statsRow(btnWidth))
+
+        // Last row: HVAC boost on/off, lined up with the same-width button.
+        boostStatusView = text("", 16f)
+        boostBtn = ctrlBtn("Disable boost", btnWidth) {
+            Prefs.setBoostEnabled(this, !Prefs.boostEnabled(this))
+            reload(); refresh()
+        }
+        right.addView(pairedRow(boostStatusView, boostBtn))
 
         // ---- Left column (34%): instructions ----
         val left = LinearLayout(this).apply {
@@ -337,6 +347,10 @@ class MainActivity : Activity() {
 
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
         overlayBtn.text = if (Prefs.overlayOn(this)) "Disable overlay" else "Enable overlay"
+
+        val boostOn = Prefs.boostEnabled(this)
+        boostStatusView.text = withAccentColor("HVAC boost: ${if (boostOn) "Enabled" else "Disabled"}")
+        boostBtn.text = if (boostOn) "Disable boost" else "Enable boost"
     }
 
     private fun cycleMic() {

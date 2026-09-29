@@ -93,7 +93,8 @@ class LevelerService : Service() {
         // mic change, Follow avg toggle, Reset button) arrives through this SAME
         // onStartCommand while already running; re-running the reset for those would
         // adopt the boosted volume as the new normal and silently cancel the boost.
-        // Only Stop leveling (which destroys the service) should end a boost.
+        // A boost is ended only by Stop leveling (which destroys the service), the
+        // Disable boost button, or the room loudness dropping below HVAC_OFF_DBFS.
         if (!baselined) {
             baselined = true
             baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -414,8 +415,19 @@ class LevelerService : Service() {
                 updateNotification(now)
 
                 // Auto HVAC boost/unboost
+                val boostOn = Prefs.boostEnabled(this)
                 try {
-                    if (avg >= HVAC_ON_DBFS) {
+                    if (!boostOn) {
+                        // Boost disabled from the UI: never start a check, and take back any
+                        // boost that is currently applied (same exact-reversal path as the
+                        // automatic unboost).
+                        hvacAboveSince = 0L
+                        if (hvacBoosted) {
+                            applyHvacBoost(raise = false)
+                            hvacBoosted = false
+                            State.hvacBoosted = false
+                        }
+                    } else if (avg >= HVAC_ON_DBFS) {
                         if (hvacAboveSince == 0L) hvacAboveSince = now
 
                         if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {

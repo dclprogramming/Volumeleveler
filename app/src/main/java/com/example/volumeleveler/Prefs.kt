@@ -34,4 +34,10 @@ object Prefs {
      *  tell whether setup happened. */
     fun shortcutSetupPrompted(c: Context): Boolean = sp(c).getBoolean("shortcutSetupPrompted", false)
     fun setShortcutSetupPrompted(c: Context, v: Boolean) = sp(c).edit().putBoolean("shortcutSetupPrompted", v).apply()
+
+    /** Whether the HVAC boost feature is enabled (the Enable boost / Disable boost
+     *  button). Defaults to on. While off, no boost check starts and any active boost
+     *  is taken back. */
+    fun boostEnabled(c: Context): Boolean = sp(c).getBoolean("boostEnabled", true)
+    fun setBoostEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("boostEnabled", v).apply()
 }
