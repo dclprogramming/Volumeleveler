@@ -84,15 +84,23 @@ class LevelerService : Service() {
             registered = true
         }
 
-        // These must run on EVERY Start so a new detection cycle can begin
-        baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        knownVol = baseVol
-        statsStarted = false
-        hvacBoosted = false
-        State.hvacBoosted = false
-        hvacAboveSince = 0L
-        hvacBoostDelta = 0
-        hvacTesting = false
+        // A "reload settings" ping (mic change, Follow avg toggle, overlay toggle,
+        // Reset button) arrives through this SAME onStartCommand while already
+        // running. Only a genuine fresh Start should re-baseline the volume ceiling
+        // or reset the HVAC boost - otherwise switching mics (or any other reload)
+        // while boosted would silently adopt the boosted volume as the new normal
+        // and forget there's a boost to reverse later.
+        val freshStart = !State.running
+        if (freshStart) {
+            baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            knownVol = baseVol
+            statsStarted = false
+            hvacBoosted = false
+            State.hvacBoosted = false
+            hvacAboveSince = 0L
+            hvacBoostDelta = 0
+            hvacTesting = false
+        }
 
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
