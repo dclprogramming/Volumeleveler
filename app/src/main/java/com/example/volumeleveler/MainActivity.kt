@@ -59,6 +59,18 @@ class MainActivity : Activity() {
         return sb
     }
 
+    /** "<prefix>Enabled" / "<prefix>Disabled" with the Enabled word in blue and the
+     *  Disabled word in red. */
+    private fun onOffText(prefix: String, on: Boolean): SpannableStringBuilder {
+        val word = if (on) "Enabled" else "Disabled"
+        val sb = SpannableStringBuilder(prefix + word)
+        sb.setSpan(
+            ForegroundColorSpan(if (on) ACCENT_COLOR else Color.parseColor("#FF0000")),
+            prefix.length, prefix.length + word.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        return sb
+    }
+
     private fun statusColor(status: String): Int? = when (status) {
         "Stopped" -> Color.parseColor("#FF0000")
         "Listening" -> Color.parseColor("#00BFFF")
@@ -335,21 +347,29 @@ class MainActivity : Activity() {
         statusView.text = statusSb
 
         // Row 2: Live overlay, lined up with the overlay button.
-        val overlayLabel = if (Prefs.overlayOn(this)) "Enabled" else "Disabled"
-        overlayStatusView.text = withAccentColor("Live overlay: $overlayLabel")
+        overlayStatusView.text = onOffText("Live overlay: ", Prefs.overlayOn(this))
 
         // Row 3: Mic in use + selected Mic, lined up with the mic selector button.
         val saved = Prefs.mic(this)
         val micLabel = if (saved.isEmpty()) "Auto"
         else MicSelector.list(this).firstOrNull { MicSelector.key(it) == saved }
             ?.let { MicSelector.label(it) } ?: "Auto (chosen mic not connected)"
-        micStatusView.text = withAccentColor("Mic in use: ${State.micName}\nMic: $micLabel")
+        // Both mic values (the one in use and the selected one) are shown in blue. Span
+        // positions come from how the string is built, not from searching the text.
+        val micName = "${State.micName}"
+        val inUsePrefix = "Mic in use: "
+        val selPrefix = "\nMic: "
+        val micSb = SpannableStringBuilder(inUsePrefix + micName + selPrefix + micLabel)
+        val nameEnd = inUsePrefix.length + micName.length
+        micSb.setSpan(ForegroundColorSpan(ACCENT_COLOR), inUsePrefix.length, nameEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        micSb.setSpan(ForegroundColorSpan(ACCENT_COLOR), nameEnd + selPrefix.length, micSb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        micStatusView.text = micSb
 
         toggleBtn.text = if (State.running) "Stop leveling" else "Start leveling"
         overlayBtn.text = if (Prefs.overlayOn(this)) "Disable overlay" else "Enable overlay"
 
         val boostOn = Prefs.boostEnabled(this)
-        boostStatusView.text = withAccentColor("HVAC boost: ${if (boostOn) "Enabled" else "Disabled"}")
+        boostStatusView.text = onOffText("HVAC boost: ", boostOn)
         boostBtn.text = if (boostOn) "Disable boost" else "Enable boost"
     }
 
