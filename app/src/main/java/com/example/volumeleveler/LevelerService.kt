@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class LevelerService : Service() {
@@ -47,10 +48,9 @@ class LevelerService : Service() {
     private var hvacAboveSince = 0L
     @Volatile private var hvacBoostDelta = 0
     // HVAC mute check: when loudness has held >=20% for the hold time, the TV is muted
-    // for ~2s to see whether the room stays loud without it (real background noise) or
-    // drops (just a loud scene). A failed check re-arms by resetting hvacAboveSince, so
-    // it re-uses the same 1-minute hold timer for the next attempt rather than a second
-    // separate one. See the block in captureLoop.
+    // for a short window to see whether the room stays loud without it (real background
+    // noise) or drops (just a loud scene). A failed check uses a short back-off so it
+    // can retry reasonably soon.
     @Volatile private var hvacTesting = false
     private var hvacTestStart = 0L
     private var hvacTestSum = 0.0
@@ -81,15 +81,18 @@ class LevelerService : Service() {
             lastSig = signature()
             am.registerAudioDeviceCallback(deviceCb, Handler(Looper.getMainLooper()))
             registered = true
-            baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            knownVol = baseVol
-            statsStarted = false
-            hvacBoosted = false
-            State.hvacBoosted = false
-            hvacAboveSince = 0L
-            hvacBoostDelta = 0
-            hvacTesting = false
         }
+
+        // These must run on EVERY Start so a new detection cycle can begin
+        baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        knownVol = baseVol
+        statsStarted = false
+        hvacBoosted = false
+        State.hvacBoosted = false
+        hvacAboveSince = 0L
+        hvacBoostDelta = 0
+        hvacTesting = false
+
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
         startCapture() // also used as "reload settings" when the UI pings the service
@@ -120,6 +123,11 @@ class LevelerService : Service() {
                     am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
                 }
             }
+        }
+        // Safety: never leave the stream muted if we were in the middle of a test
+        if (hvacTesting) {
+            hvacTesting = false
+            try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
         }
         State.running = false
         State.status = "Stopped"
@@ -167,11 +175,14 @@ class LevelerService : Service() {
         }
     }
 
-    private fun updateOverlay(text: String, hvacBoosted: Boolean) {
-        main.post {
-            if (hvacBoosted) {
-                val sb = android.text.SpannableString(text)
-                val lime = android.graphics.Color.parseColor("#32CD32")
+    private fun updateOverlay(text: String, volBoosted: Boolean, targetFollowing: Boolean) {
+    main.post {
+        if (volBoosted || targetFollowing) {
+            val sb = android.text.SpannableString(text)
+            val lime = android.graphics.Color.parseColor("#32CD32")
+
+            // Highlight the Target value when following average OR when HVAC-boosted
+            if (targetFollowing || volBoosted) {
                 val tIdx = text.indexOf("Target ")
                 if (tIdx >= 0) {
                     val valStart = tIdx + 7 // length of "Target "
@@ -181,19 +192,25 @@ class LevelerService : Service() {
                         valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
                 }
-                val vIdx = text.indexOf("Vol ")
-                if (vIdx >= 0) {
+            }
+
+            // Highlight the Vol value when HVAC-boosted
+            if (volBoosted) {
+                val idx = text.indexOf("Vol ")
+                if (idx >= 0) {
                     sb.setSpan(
                         android.text.style.ForegroundColorSpan(lime),
-                        vIdx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        idx + 4, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
                 }
-                overlay?.text = sb
-            } else {
-                overlay?.text = text // default blue (the overlay TextView's own text color)
             }
+
+            overlay?.text = sb
+        } else {
+            overlay?.text = text
         }
     }
+}
 
     // ---- device hot-plug ----
 
@@ -223,21 +240,21 @@ class LevelerService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-    val openIntent = Intent(this, MainActivity::class.java).apply {
-        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        }
+        val open = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setContentTitle("Volume Leveler running")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+            .setContentIntent(open)
+            .setOngoing(true)
+            .build()
     }
-    val open = PendingIntent.getActivity(
-        this, 0, openIntent,
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    )
-    return Notification.Builder(this, CHANNEL)
-        .setContentTitle("Volume Leveler running")
-        .setContentText(text)
-        .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
-        .setContentIntent(open)
-        .setOngoing(true)
-        .build()
-}
 
     /** Lets you check the room reading from the notification shade without leaving your show. */
     private fun updateNotification(now: Long) {
@@ -254,7 +271,8 @@ class LevelerService : Service() {
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur", hvacBoosted)
+        val volPct = if (maxVol > 0) (cur * 100f / maxVol).roundToInt() else 0
+        updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur", hvacBoosted, following)
     }
 
     // ---- capture + leveling ----
@@ -325,18 +343,32 @@ class LevelerService : Service() {
                 if (hvacTesting) {
                     val t = SystemClock.elapsedRealtime()
                     val elapsed = t - hvacTestStart
-                    if (elapsed >= HVAC_MUTE_SETTLE_MS) { hvacTestSum += db; hvacTestN++ }
+
+                    // Only accumulate after the mute has had time to land
+                    if (elapsed >= HVAC_MUTE_SETTLE_MS) {
+                        hvacTestSum += db
+                        hvacTestN++
+                    }
+
                     if (elapsed >= HVAC_MUTE_SETTLE_MS + HVAC_MUTE_MEASURE_MS) {
-                        val muteTook = am.isStreamMute(AudioManager.STREAM_MUSIC)
                         val meanDb = if (hvacTestN > 0) (hvacTestSum / hvacTestN).toFloat() else Float.NaN
+
+                        // Always unmute
                         hvacTesting = false
-                        try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
-                        avg = preTestAvg; slow = preTestSlow
+                        try {
+                            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+                        } catch (_: Exception) {}
+
+                        // Restore the smoothed levels so leveling continues smoothly
+                        avg = preTestAvg
+                        slow = preTestSlow
                         settleUntil = t + 1500
                         State.status = "Listening"
-                        // Room still >=18% with the TV silent = background noise (HVAC).
-                        // Anything else (dropped, or the mute never registered) = no boost.
-                        if (muteTook && !meanDb.isNaN() && meanDb >= HVAC_MUTE_MAX_DBFS) {
+
+                        // Decision: room still loud while muted → real background noise
+                        // (No longer requires isStreamMute() == true – that was the main
+                        // source of intermittent failures on CEC/ARC devices.)
+                        if (!meanDb.isNaN() && meanDb >= HVAC_MUTE_MAX_DBFS) {
                             try {
                                 applyHvacBoost(raise = true)
                                 hvacBoosted = true
@@ -345,14 +377,14 @@ class LevelerService : Service() {
                                 State.status = "HVAC boost error: ${e.javaClass.simpleName}"
                             }
                         } else {
-                            // Loud scene (or the mute didn't register) - re-arm the SAME
-                            // 1-minute hold timer instead of a second one, so it won't
-                            // retry until loudness has held >=20% for another full minute.
-                            hvacAboveSince = t
+                            // Either it dropped (loud scene) or we got no usable samples.
+                            // Back off only 20 s instead of a full extra minute.
+                            hvacAboveSince = t - HVAC_HOLD_MS + HVAC_RETRY_BACKOFF_MS
                         }
                     }
                     continue
                 }
+
                 // Fast attack (loud sounds register within ~100 ms), slow release (~1.5 s).
                 avg = if (avg.isNaN()) db else avg + (if (db > avg) ATTACK else RELEASE) * (db - avg)
                 slow = if (slow.isNaN()) db else slow + (if (db > slow) SLOW_ATTACK else SLOW_RELEASE) * (db - slow)
@@ -362,51 +394,51 @@ class LevelerService : Service() {
                 syncVolume(now)
                 updateNotification(now)
 
-                // Auto HVAC boost/unboost. While boosted, only the unboost condition is
-                // ever checked - the boost condition (and its bookkeeping) is skipped
-                // entirely until we're back to unboosted. Wrapped in try/catch since an
-                // uncaught exception here would silently kill this whole thread, taking
-                // Loudness Statistics (and everything else) down with it.
+                // Auto HVAC boost/unboost
                 try {
-                    if (hvacBoosted) {
-                        // Dropping below 15% at all (no sustain needed) suggests HVAC
-                        // went back off, so reverse the boost.
-                        if (avg < HVAC_OFF_DBFS) {
-                            applyHvacBoost(raise = false)
-                            hvacBoosted = false
-                            State.hvacBoosted = false
-                        }
-                    } else if (avg >= HVAC_ON_DBFS) {
-                        // Sustained elevated noise (avg staying >=20% continuously for a
-                        // full minute) suggests something like HVAC came on. To confirm
-                        // it, the TV is briefly muted: if the room stays >=18% anyway
-                        // it's background noise, so nudge the baseline up by 4 (and the
-                        // target up 3%) to compensate; if it drops, it was just a loud
-                        // scene and nothing changes.
+                    if (avg >= HVAC_ON_DBFS) {
                         if (hvacAboveSince == 0L) hvacAboveSince = now
-                        if (now - hvacAboveSince >= HVAC_HOLD_MS) {
-                            if (am.isVolumeFixed || am.isStreamMute(AudioManager.STREAM_MUSIC)) {
-                                hvacAboveSince = now // can't run the check right now - re-arm the hold timer
+
+                        if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
+                            if (am.isVolumeFixed) {
+                                // Can't mute on this output – short back-off and try again later
+                                hvacAboveSince = now - HVAC_HOLD_MS + HVAC_RETRY_BACKOFF_MS
                             } else {
-                                preTestAvg = avg; preTestSlow = slow
-                                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
-                                hvacTestStart = now; hvacTestSum = 0.0; hvacTestN = 0
+                                // Start the mute test
+                                preTestAvg = avg
+                                preTestSlow = slow
+                                try {
+                                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+                                } catch (_: Exception) { /* ignore */ }
+
+                                hvacTestStart = now
+                                hvacTestSum = 0.0
+                                hvacTestN = 0
                                 hvacTesting = true
                                 State.status = "Checking background noise"
                             }
                         }
                     } else {
+                        // Loudness dropped below the on-threshold
                         hvacAboveSince = 0L
+                        if (hvacBoosted && avg < HVAC_OFF_DBFS) {
+                            applyHvacBoost(raise = false)
+                            hvacBoosted = false
+                            State.hvacBoosted = false
+                        }
                     }
                 } catch (e: Exception) {
                     State.status = "HVAC boost error: ${e.javaClass.simpleName}"
+                    // Make sure we never leave the stream muted
+                    if (hvacTesting) {
+                        hvacTesting = false
+                        try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+                    }
                 }
 
                 val silent = db < -85f
+                if (silent) continue
 
-                if (silent) {
-                    continue
-                }
                 if (!statsStarted && avg >= STATS_START_DBFS) statsStarted = true
                 if (statsStarted) State.recordStat(avg)
 
@@ -417,11 +449,8 @@ class LevelerService : Service() {
                 if (now - dropWindowStart > DROP_WINDOW_MS) { dropWindowStart = now; dropInWindow = 0 }
                 val dropRoom = MAX_DROP_LEVELS - dropInWindow
                 when {
-                    // Loud: react right away once we're clearly over (past tolerance by a
-                    // real margin, not just a hair), sized to how far over we are.
+                    // Loud: react right away once we're clearly over
                     loudBy > LOWER_TRIGGER_MARGIN_DB && dropRoom > 0 && now - lastAdjust >= LOWER_COOLDOWN -> {
-                        // Size the cut from the steadier level, so a one-off spike in an
-                        // explosion doesn't cause a huge drop; and cap the total cut per window.
                         val slowBy = slow - (target + tol)
                         val levels = minOf(
                             floor(slowBy * CUT_DAMPING / DB_PER_LEVEL).toInt().coerceIn(LOWER_MIN_LEVELS, LOWER_MAX_LEVELS),
@@ -429,18 +458,13 @@ class LevelerService : Service() {
                         )
                         val moved = step(-1, levels)
                         dropInWindow += moved
-                        // The mic can't hear the change yet, so assume it will and
-                        // don't keep lowering for the same loud moment.
                         avg -= moved * DB_PER_LEVEL
                         slow -= moved * DB_PER_LEVEL
                         lastAdjust = now
                     }
-                    // Quiet: come back up toward your own volume. The ceiling is always
-                    // your baseline (never boosted above it), so this only ever recovers
-                    // ground the app itself cut - it can't overshoot past where you set it.
+                    // Quiet: come back up toward your own volume
                     avg < target - tol && now - lastAdjust >= RAISE_COOLDOWN &&
                         am.getStreamVolume(AudioManager.STREAM_MUSIC) < baseVol -> {
-                        // The quieter the scene, the more levels it gets back (1-2).
                         val quietBy = (target - tol) - avg
                         val levels = if (quietBy >= 6f) 2 else 1
                         val moved = step(+1, levels)
@@ -494,23 +518,16 @@ class LevelerService : Service() {
             return 0
         }
         // Refuse to fire another burst while the previous one may still be landing on
-        // the TV/receiver (HDMI-CEC/ARC has real round-trip lag; Android's own stream
-        // index can look "settled" before the hardware actually is). Without this,
-        // the loop can stack bursts faster than the hardware confirms them, each one
-        // computed against a stale "current volume" - which is how limits get blown
-        // past even though every individual step() call believes it's respecting them.
+        // the TV/receiver (HDMI-CEC/ARC has real round-trip lag).
         if (SystemClock.elapsedRealtime() < settleUntil) return 0
 
         val lo = maxOf(0, baseVol - 8)
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         val hi = ceilingLevels()
 
-        // Never move against the requested direction, and never past the limits.
         val moves = if (dir > 0) minOf(cur + count, hi) - cur else cur - maxOf(cur - count, lo)
         if (moves <= 0) return 0
 
-        // adjustStreamVolume follows the same path as remote volume keys,
-        // which is what HDMI-CEC / ARC output usually needs.
         repeat(moves) {
             am.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
@@ -525,24 +542,17 @@ class LevelerService : Service() {
 
     /**
      * Tracks the current volume so our own adjustments (via step()) aren't mistaken for
-     * manual ones. The baseline (baseVol) is intentionally NOT re-captured here: while
-     * leveling is running, a manual remote adjustment just becomes the new "current"
-     * volume that leveling continues from — it does not move the ceiling or target.
-     * To set a new baseline, the user must press Stop leveling, adjust the volume, then
-     * Start leveling again (see onStartCommand, which captures baseVol fresh on start).
+     * manual ones. The baseline (baseVol) is intentionally NOT re-captured here.
      */
     private fun syncVolume(now: Long) {
-        // The service's own baseVol is updated the instant a boost applies, so publish
-        // it to State unconditionally - it shouldn't wait behind the throttle below,
-        // which exists only to debounce detecting the user's own remote presses.
-        State.baseVol = baseVol
         if (now < settleUntil || now - lastSync < 250) return
         lastSync = now
         val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (adjusted) {
-            adjusted = false // just learn where our own change landed
+            adjusted = false
         }
         knownVol = cur
+        State.baseVol = baseVol
     }
 
     // ---- Bluetooth mic routing (best effort) ----
@@ -573,25 +583,26 @@ class LevelerService : Service() {
         private const val CHANNEL = "leveler"
         private const val NOTIFY_MS = 2000L
         private const val LOWER_MIN_LEVELS = 1
-        private const val CUT_DAMPING = 0.8f    // slightly undershoot rather than overcorrect
+        private const val CUT_DAMPING = 0.8f
         private const val LOWER_MAX_LEVELS = 3
-        private const val MAX_DROP_LEVELS = 3      // most levels cut within one window
+        private const val MAX_DROP_LEVELS = 3
         private const val DROP_WINDOW_MS = 2500L
-        private const val SLOW_ATTACK = 0.20f      // per 50 ms chunk (~0.25 s) - faster reaction
+        private const val SLOW_ATTACK = 0.20f
         private const val SLOW_RELEASE = 0.03f
-        private const val DB_PER_LEVEL = 1.1f   // roughly what one volume level changes, in dB
-        private const val ATTACK = 0.5f         // per 50 ms chunk
-        private const val RELEASE = 0.05f       // per 50 ms chunk (~1.0 s decay) - was 0.03f (~1.6 s)
+        private const val DB_PER_LEVEL = 1.1f
+        private const val ATTACK = 0.5f
+        private const val RELEASE = 0.05f
         private const val LOWER_COOLDOWN = 400L
-        private const val LOWER_TRIGGER_MARGIN_DB = 3f  // ignore small fluctuations right at the tolerance edge; only react once clearly over
+        private const val LOWER_TRIGGER_MARGIN_DB = 3f
         private const val RAISE_COOLDOWN = 400L
-        private const val STATS_START_DBFS = -75f  // 25% - Loudness Statistics starts once active loudness hits this
-        private const val HVAC_ON_DBFS = -80f    // 20% - sustained loudness at/above this suggests HVAC/background noise came on
-        private const val HVAC_OFF_DBFS = -85f   // 15% - dropping below this (even briefly) suggests it went back off
-        private const val HVAC_HOLD_MS = 60_000L // how long loudness must stay >=20% before boosting
-        private const val HVAC_MUTE_SETTLE_MS = 1500L // let the mute land (HDMI-CEC lag) before reading
-        private const val HVAC_MUTE_MEASURE_MS = 500L // then read raw loudness for this long, still muted
-        private const val HVAC_MUTE_MAX_DBFS = -82f   // 18%: muted room at/above this = HVAC, below = loud scene
-        private const val HVAC_BOOST_LEVELS = 4
+        private const val STATS_START_DBFS = -75f          // 25 %
+        private const val HVAC_ON_DBFS = -80f              // 20 %
+        private const val HVAC_OFF_DBFS = -85f             // 15 %
+        private const val HVAC_HOLD_MS = 60_000L
+        private const val HVAC_MUTE_SETTLE_MS = 1500L      // give CEC/ARC time to mute
+        private const val HVAC_MUTE_MEASURE_MS = 500L
+        private const val HVAC_MUTE_MAX_DBFS = -82f        // 18 %
+        private const val HVAC_RETRY_BACKOFF_MS = 20_000L  // after failed test
+        private const val HVAC_BOOST_LEVELS = 5
     }
 }
