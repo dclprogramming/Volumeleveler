@@ -37,6 +37,10 @@ class LevelerService : Service() {
     private val generation = AtomicInteger(0)
     private var worker: Thread? = null
     private var registered = false
+    // True once this service instance has captured its baseline. The service object is
+    // created fresh on every Start and destroyed on Stop, so this is false only for a
+    // genuine fresh Start - never for a "reload settings" ping from the UI.
+    private var baselined = false
     private var lastSig = ""
     // Volume ceiling: captured once when leveling starts and held fixed until the next
     // Stop/Start cycle. Manual remote changes while running are NOT applied to this.
@@ -84,15 +88,23 @@ class LevelerService : Service() {
             registered = true
         }
 
-        // These must run on EVERY Start so a new detection cycle can begin
-        baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-        knownVol = baseVol
-        statsStarted = false
-        hvacBoosted = false
-        State.hvacBoosted = false
-        hvacAboveSince = 0L
-        hvacBoostDelta = 0
-        hvacTesting = false
+        // Only a genuine fresh Start (a new service instance) re-baselines the volume
+        // ceiling and resets the HVAC boost. A "reload settings" ping (overlay toggle,
+        // mic change, Follow avg toggle, Reset button) arrives through this SAME
+        // onStartCommand while already running; re-running the reset for those would
+        // adopt the boosted volume as the new normal and silently cancel the boost.
+        // Only Stop leveling (which destroys the service) should end a boost.
+        if (!baselined) {
+            baselined = true
+            baseVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            knownVol = baseVol
+            statsStarted = false
+            hvacBoosted = false
+            State.hvacBoosted = false
+            hvacAboveSince = 0L
+            hvacBoostDelta = 0
+            hvacTesting = false
+        }
 
         State.running = true
         if (Prefs.overlayOn(this)) addOverlay() else removeOverlay()
