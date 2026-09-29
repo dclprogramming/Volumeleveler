@@ -23,6 +23,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -88,7 +89,6 @@ class MainActivity : Activity() {
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(28), dp(24), dp(28), dp(24))
-            setBackgroundColor(panelBg)
         }
 
         right.addView(text("Volume Leveler", 26f))
@@ -191,7 +191,6 @@ class MainActivity : Activity() {
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(24), dp(24), dp(24))
-            setBackgroundColor(panelBg)
         }
         left.addView(text(
             "\n1. In a quiet room, manually set your remote volume where you like it. " +
@@ -210,12 +209,17 @@ class MainActivity : Activity() {
         // ---- Full-width row: 34% instructions | 66% controls ----
         val rowContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(panelBg)
         }
         rowContainer.addView(left, LinearLayout.LayoutParams(screenW * 34 / 100, LinearLayout.LayoutParams.MATCH_PARENT))
         rowContainer.addView(right, LinearLayout.LayoutParams(rightColW, LinearLayout.LayoutParams.MATCH_PARENT))
 
-        setContentView(rowContainer)
+        // Animated waveform sits behind the (now transparent) panels.
+        val root = FrameLayout(this).apply { setBackgroundColor(panelBg) }
+        root.addView(WaveBackgroundView(this), FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        root.addView(rowContainer, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        setContentView(root)
         toggleBtn.requestFocus()
 
         // Guide the user to Accessibility Settings to set up the Back+Down shortcut -
