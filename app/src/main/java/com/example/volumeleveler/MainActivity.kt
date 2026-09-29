@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
@@ -19,6 +20,7 @@ import android.os.Looper
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -138,22 +140,23 @@ class MainActivity : Activity() {
     val t = (if (followed) State.statsAvg else Prefs.target(this)) + State.hvacTargetBonusDb
     val targetPct = "${pct(t)}%"
 
-    val base = "Room loudness: $level\nLoudness target: $targetPct" +
-        if (Prefs.followAvg(this)) " (following avg)" else ""
+    // Track the target value's position from how the string is built, rather than
+    // searching for it afterward - Room loudness and Loudness target can land on the
+    // same number (e.g. both "26%"), and a text search would find the wrong one.
+    val roomPart = "Room loudness: $level\nLoudness target: "
+    val suffix = if (Prefs.followAvg(this)) " (following avg)" else ""
+    val base = "$roomPart$targetPct$suffix"
+    val targetStart = roomPart.length
+    val targetEnd = targetStart + targetPct.length
 
     val sb = withAccentColor(base)
-
-    // Lime when following avg OR when HVAC-boosted
-    if (followed || State.hvacBoosted) {
-        val idx = base.indexOf(targetPct)
-        if (idx >= 0) {
-            sb.setSpan(
-                ForegroundColorSpan(Color.parseColor("#32CD32")),
-                idx,
-                idx + targetPct.length,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
+    // Color reflects ONLY whether this number is currently boosted - never Follow avg.
+    if (State.hvacBoosted) {
+        sb.setSpan(ForegroundColorSpan(Color.parseColor("#32CD32")), targetStart, targetEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+    // Follow avg only ever adds italics - it never touches color.
+    if (Prefs.followAvg(this)) {
+        sb.setSpan(StyleSpan(Typeface.ITALIC), targetStart, targetEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     targetTv.text = sb

@@ -20,6 +20,8 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
@@ -27,7 +29,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class LevelerService : Service() {
@@ -175,27 +176,34 @@ class LevelerService : Service() {
         }
     }
 
-    private fun updateOverlay(text: String, volBoosted: Boolean, targetFollowing: Boolean) {
+    private fun updateOverlay(text: String, hvacBoosted: Boolean, targetFollowing: Boolean) {
     main.post {
-        if (volBoosted || targetFollowing) {
+        if (hvacBoosted || targetFollowing) {
             val sb = android.text.SpannableString(text)
             val lime = android.graphics.Color.parseColor("#32CD32")
 
-            // Highlight the Target value when following average OR when HVAC-boosted
-            if (targetFollowing || volBoosted) {
-                val tIdx = text.indexOf("Target ")
-                if (tIdx >= 0) {
-                    val valStart = tIdx + 7 // length of "Target "
-                    val valEnd = text.indexOf("  Vol", valStart).let { if (it >= 0) it else text.length }
+            val tIdx = text.indexOf("Target ")
+            if (tIdx >= 0) {
+                val valStart = tIdx + 7 // length of "Target "
+                val valEnd = text.indexOf("  Vol", valStart).let { if (it >= 0) it else text.length }
+                // Color reflects ONLY the boost - never Follow avg.
+                if (hvacBoosted) {
                     sb.setSpan(
                         android.text.style.ForegroundColorSpan(lime),
+                        valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+                // Follow avg only ever adds italics - it never touches color.
+                if (targetFollowing) {
+                    sb.setSpan(
+                        StyleSpan(Typeface.ITALIC),
                         valStart, valEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
                 }
             }
 
             // Highlight the Vol value when HVAC-boosted
-            if (volBoosted) {
+            if (hvacBoosted) {
                 val idx = text.indexOf("Vol ")
                 if (idx >= 0) {
                     sb.setSpan(
@@ -271,7 +279,6 @@ class LevelerService : Service() {
         val text = "Room loudness: $loud    Target: $tgt    Volume: $cur/$maxVol"
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(1, buildNotification(text))
-        val volPct = if (maxVol > 0) (cur * 100f / maxVol).roundToInt() else 0
         updateOverlay("Loudness $loudOverlay  Target $tgt  Vol $cur", hvacBoosted, following)
     }
 
