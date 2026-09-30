@@ -50,6 +50,9 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
 
+    /** Vertical gap between button rows: 5.4dp (the old 6dp reduced by 10%). */
+    private val rowGap get() = (5.4f * resources.displayMetrics.density).roundToInt()
+
     /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
     private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
 
@@ -121,7 +124,7 @@ class MainActivity : Activity() {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(6), 0, dp(6))
+                setPadding(0, rowGap, 0, rowGap)
                 addView(tv); addView(button)
             }
         }
@@ -297,7 +300,7 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(0, rowGap, 0, rowGap)
         }
         val tv = text("", 16f).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -345,7 +348,7 @@ class MainActivity : Activity() {
         val hPad = dp(20)
         setPadding(hPad, paddingTop, hPad, paddingBottom)
         layoutParams = LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(6)
+            topMargin = rowGap
         }
         setOnClickListener { onClick() }
     }
