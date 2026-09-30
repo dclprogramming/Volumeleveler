@@ -51,7 +51,7 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
 
     /** Vertical gap between button rows: 5.4dp (the old 6dp reduced by 10%). */
-    private val rowGap get() = (5.4f * resources.displayMetrics.density).roundToInt()
+    private val rowGap get() = (5.0f * resources.displayMetrics.density).roundToInt()
 
     /** Mic level (dBFS, always negative) shown on a 0-100 "loudness" scale: 1% = 1 dB. */
     private fun pct(dbfs: Float) = (dbfs + 100f).coerceIn(0f, 100f).roundToInt()
