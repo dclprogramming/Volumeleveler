@@ -54,8 +54,9 @@ class LevelerService : Service() {
     @Volatile private var hvacBoostDelta = 0
     // HVAC mute check: when loudness has held >=20% for the hold time, the TV is muted
     // for a short window to see whether the room stays loud without it (real background
-    // noise) or drops (just a loud scene). A failed check uses a short back-off so it
-    // can retry reasonably soon.
+    // noise) or drops (just a loud scene). After a check that finds nothing to do, the
+    // 1-minute hold starts over from zero: another full minute of continuous >=20%
+    // loudness is required before the next mute check.
     @Volatile private var hvacTesting = false
     private var hvacTestStart = 0L
     private var hvacTestSum = 0.0
@@ -398,8 +399,8 @@ class LevelerService : Service() {
                             }
                         } else {
                             // Either it dropped (loud scene) or we got no usable samples.
-                            // Back off only 20 s instead of a full extra minute.
-                            hvacAboveSince = t - HVAC_HOLD_MS + HVAC_RETRY_BACKOFF_MS
+                            // Do nothing, and start the full 1-minute hold over from zero.
+                            hvacAboveSince = 0L
                         }
                     }
                     continue
@@ -432,8 +433,8 @@ class LevelerService : Service() {
 
                         if (!hvacBoosted && now - hvacAboveSince >= HVAC_HOLD_MS) {
                             if (am.isVolumeFixed) {
-                                // Can't mute on this output – short back-off and try again later
-                                hvacAboveSince = now - HVAC_HOLD_MS + HVAC_RETRY_BACKOFF_MS
+                                // Can't mute on this output – restart the full 1-minute hold
+                                hvacAboveSince = now
                             } else {
                                 // Start the mute test
                                 preTestAvg = avg
@@ -633,7 +634,6 @@ class LevelerService : Service() {
         private const val HVAC_MUTE_SETTLE_MS = 1500L      // give CEC/ARC time to mute
         private const val HVAC_MUTE_MEASURE_MS = 500L
         private const val HVAC_MUTE_MAX_DBFS = -82f        // 18 %
-        private const val HVAC_RETRY_BACKOFF_MS = 20_000L  // after failed test
-        private const val HVAC_BOOST_LEVELS = 4
+        private const val HVAC_BOOST_LEVELS = 5
     }
 }
