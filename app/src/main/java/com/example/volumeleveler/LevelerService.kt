@@ -122,32 +122,53 @@ class LevelerService : Service() {
         State.hvacBoosted = false
         disableSco()
         removeOverlay()
+        // Never leave the stream muted if we were in the middle of a test. This must
+        // happen BEFORE restoring the volume: stepping a muted stream can swallow the
+        // first step or shift the level when the unmute lands afterward.
+        if (hvacTesting) {
+            hvacTesting = false
+            try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+        }
         // Put the system volume back where it was when leveling started, undoing any
         // dynamic raise/lower drift from this session AND any still-active HVAC boost
         // (if HVAC never dropped back below 15% before you hit Stop, hvacBoostDelta is
         // still nonzero - restoring to raw baseVol would lock the boosted number in as
         // if it were your real baseline, causing a second boost to stack on top of it
         // next session).
-        if (baseVol >= 0 && !am.isVolumeFixed) {
-            val trueBase = baseVol - hvacBoostDelta
-            val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val diff = trueBase - cur
-            if (diff != 0) {
-                val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                repeat(kotlin.math.abs(diff)) {
-                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
-                }
-            }
-        }
-        // Safety: never leave the stream muted if we were in the middle of a test
-        if (hvacTesting) {
-            hvacTesting = false
-            try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
-        }
+        // (State.running must already be false here: restoreVolume's passes bail out
+        // whenever a new session is running.)
         State.running = false
         State.status = "Stopped"
+        if (baseVol >= 0 && !am.isVolumeFixed) {
+            restoreVolume(am, baseVol - hvacBoostDelta)
+        }
         // (Room loudness is left as-is; LevelPreview picks up mic listening again.)
         super.onDestroy()
+    }
+
+    /**
+     * Returns the stream volume to [target]. One pass of rapid steps rarely lands exactly
+     * on TVs (steps can be dropped or still settling), so after the first pass we
+     * re-read the volume a few times and nudge it the rest of the way. Later passes are
+     * skipped if leveling has been started again, so they never fight a new session.
+     */
+    private fun restoreVolume(audio: AudioManager, target: Int) {
+        val handler = Handler(Looper.getMainLooper())
+        fun correct() {
+            if (State.running) return
+            val diff = target - audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (diff == 0) return
+            val dir = if (diff > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+            try {
+                repeat(kotlin.math.abs(diff)) {
+                    audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+                }
+            } catch (_: Exception) {}
+        }
+        correct()
+        for (delayMs in longArrayOf(350L, 800L, 1500L)) {
+            handler.postDelayed({ correct() }, delayMs)
+        }
     }
 
     // ---- on-screen overlay (works over Tubi/any app; needs "Draw over other apps") ----
