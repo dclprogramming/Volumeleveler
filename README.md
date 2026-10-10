@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/volumeleveler.jpeg" width="96" alt="SideLoader icon"></p>
+
 # Volume Leveler (Google TV / Android TV)
 
 Listens through a mic (auto-picks Built-in > USB > Bluetooth, or choose manually) to dynamically nudge the TV's volume up & down, keeping the rooms overall noise level near a set target. The apps primary function is to fix movies that go from normal volume to blasting you into another dimension to whispering by stabilizing and leveling audio output.   
