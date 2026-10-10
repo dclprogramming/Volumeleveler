@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/volumeleveler.jpeg" width="96" alt="SideLoader icon"></p>
+<p align="center"><img src="assets/volumeleveler.jpeg" width="96" alt="VolumeLeveler icon"></p>
 
 # Volume Leveler (Google TV / Android TV)
 
